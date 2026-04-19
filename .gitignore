@@ -27,6 +27,7 @@ RELEASE_WORKFLOW.md
 # Build outputs
 dist/
 out/
+target/
 *.tsbuildinfo
 
 # Large media files

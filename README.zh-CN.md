@@ -36,6 +36,41 @@ args = ["run", "--directory", "/absolute/path/to/stata-mcp", "stata-mcp", "--sta
 enabled = true
 ```
 
+## 本地 CLI
+
+仓库现在还提供一个本地 Rust CLI，命令名是 `stata-cli`。它不走 MCP，而是直接包装本地 Python/PyStata backend。
+
+全局安装：
+
+```bash
+cargo install --path /Users/utolaris/Documents/ai/stata-mcp/rust-cli --force
+```
+
+示例：
+
+```bash
+stata-cli run --code 'display 1+1'
+stata-cli file /absolute/path/to/test.do
+stata-cli repl
+stata-cli doctor
+stata-cli --json run --code 'display 1+1'
+```
+
+`stata-cli` 现在按下面的顺序解析 Python backend 所在的项目根目录：
+
+1. `STATA_CLI_PROJECT_ROOT`
+2. 当前工作目录及其父目录
+3. `~/.config/stata-cli/config.toml`
+4. 安装时写入的仓库路径
+
+如果你在安装 CLI 之后移动了仓库，可以创建 `~/.config/stata-cli/config.toml`：
+
+```toml
+project_root = "/absolute/path/to/stata-mcp"
+```
+
+排障时可以执行 `stata-cli doctor`，它会检查项目根目录解析、backend 脚本、Python 3.11 解释器，以及一次最小化的 `display 1+1` 后端探测。
+
 ## 功能特性
 
 - **运行 Stata 命令**：直接从编辑器执行选中部分或整个 .do 文件

@@ -24,6 +24,7 @@ dependencies = [
 [project.scripts]
 stata-mcp = "stata_mcp:main"
 stata-mcp-http = "stata_mcp_server:main"
+stata-cli-backend = "stata_cli_backend:main"
 
 [project.optional-dependencies]
 dev = [
@@ -45,6 +46,7 @@ py-modules = [
     "output_filter",
     "session_manager",
     "smcl_parser",
+    "stata_cli_backend",
     "stata_mcp",
     "stata_mcp_server",
     "stata_worker",

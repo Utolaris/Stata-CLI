@@ -45,6 +45,41 @@ enabled = true
 - **Multi-session parallel execution**: isolated worker sessions for concurrent Stata tasks
 - **Legacy HTTP path**: the FastAPI transport remains available through `stata-mcp-http`, but it is now optional and secondary
 
+## Local CLI
+
+The repo also ships a local Rust CLI named `stata-cli`. It does not speak MCP; instead, it wraps the local Python/PyStata backend directly.
+
+Build and install it globally:
+
+```bash
+cargo install --path /Users/utolaris/Documents/ai/stata-mcp/rust-cli --force
+```
+
+Examples:
+
+```bash
+stata-cli run --code 'display 1+1'
+stata-cli file /absolute/path/to/test.do
+stata-cli repl
+stata-cli doctor
+stata-cli --json run --code 'display 1+1'
+```
+
+`stata-cli` now resolves the Python backend in this order:
+
+1. `STATA_CLI_PROJECT_ROOT`
+2. the current working directory or one of its parent directories
+3. `~/.config/stata-cli/config.toml`
+4. the repo path embedded at install time
+
+If you move the repository after installing the CLI, create `~/.config/stata-cli/config.toml` with:
+
+```toml
+project_root = "/absolute/path/to/stata-mcp"
+```
+
+Use `stata-cli doctor` to verify repo root discovery, backend availability, Python 3.11 resolution, and a minimal `display 1+1` backend probe.
+
 ## Features
 
 - **Run Stata Commands**: Execute selections or entire .do files directly from your editor
