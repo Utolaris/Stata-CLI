@@ -1,0 +1,18 @@
+# Mark all files as documentation to hide language statistics on GitHub
+* linguist-documentation=true
+*.vsix binary
+
+# Exclude specific folders from language statistics
+.github/* linguist-vendored
+
+# Exclude documentation from language statistics
+docs/* linguist-documentation
+archive/* linguist-documentation
+
+# Mark configuration files
+*.json linguist-language=JSON
+*.md linguist-documentation
+webpack.config.js linguist-language=JavaScript
+
+# Ensure Python files are properly detected
+*.py linguist-language=Python 

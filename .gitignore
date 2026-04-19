@@ -1,0 +1,78 @@
+# Node.js dependencies
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Python virtual environment
+.venv/
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Archive folder
+archive/
+
+# Temporary setup files
+.uv-path
+.python-path
+.setup-complete
+.specstory/
+
+# Local development files (keep local, exclude from GitHub)
+.cursorindexingignore
+package-lock.json
+RELEASE_WORKFLOW.md
+
+# Build outputs
+dist/
+out/
+*.tsbuildinfo
+
+# Large media files
+*.mov
+*.mp4
+*.avi
+*.mkv
+
+# Developer files
+.vscode-test/
+webpack.config.js
+tsconfig.json
+.eslintrc.json
+
+# Temporary files
+tmp/
+.DS_Store
+**/.DS_Store
+workflow_logs.zip
+github_logs.txt
+*.log
+
+# VSIX packages (except the latest)
+stata-mcp-*.vsix
+!stata-mcp-0.2.3.vsix
+
+# Track only specific vsix files
+*.vsix
+!stata-mcp-0.2.3.vsix
+
+# Keep these files
+!.gitignore
+!.gitattributes
+!.vscodeignore
+!README.md
+!LICENSE
+!images/
+!images/**
+!images/demo_2x.gif
+!images/demo.mp4
+!.github/
+!.github/workflows/
+!.github/workflows/release.yml
+!jupyter-stata.md
+# SpecStory explanation file
+.specstory/.what-is-this.md
+
+# Always include the latest VSIX file
+!stata-mcp-0.2.3.vsix

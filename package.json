@@ -1,0 +1,384 @@
+{
+	"name": "stata-mcp",
+	"displayName": "Stata MCP Legacy Extension",
+	"description": "Legacy VS Code/Cursor/Antigravity compatibility layer for the standalone stata-mcp server",
+	"publisher": "DeepEcon",
+	"version": "0.5.1",
+	"icon": "images/Stata_MCP_logo_400x400.png",
+	"engines": {
+		"vscode": "^1.75.0"
+	},
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/hanlulong/stata-mcp"
+	},
+	"qna": "https://github.com/hanlulong/stata-mcp/issues",
+	"homepage": "https://github.com/hanlulong/stata-mcp",
+	"bugs": {
+		"url": "https://github.com/hanlulong/stata-mcp/issues"
+	},
+	"keywords": [
+		"stata",
+		"statistics",
+		"data science",
+		"mcp",
+		"ai"
+	],
+	"categories": [
+		"Programming Languages",
+		"Data Science",
+		"Machine Learning",
+		"Other"
+	],
+	"activationEvents": [
+		"onLanguage:stata",
+		"onCommand:stata-vscode.runSelection",
+		"onCommand:stata-vscode.runFile",
+		"onCommand:stata-vscode.testMcpServer",
+		"onStartupFinished"
+	],
+	"main": "./dist/extension.js",
+	"contributes": {
+		"commands": [
+			{
+				"command": "stata-vscode.runSelection",
+				"title": "Stata: Run Selection/Current Line",
+				"icon": "$(play)"
+			},
+			{
+				"command": "stata-vscode.runFile",
+				"title": "Stata: Run Current File",
+				"icon": "$(run-all)"
+			},
+			{
+				"command": "stata-vscode.stopExecution",
+				"title": "Stata: Stop Execution",
+				"icon": "$(debug-stop)"
+			},
+			{
+				"command": "stata-vscode.viewData",
+				"title": "Stata: View Data",
+				"icon": "$(table)"
+			},
+			{
+				"command": "stata-vscode.showInteractive",
+				"title": "Stata: Interactive Mode",
+				"icon": "$(graph)"
+			},
+			{
+				"command": "stata-vscode.showOutput",
+				"title": "Stata: Show Output"
+			},
+			{
+				"command": "stata-vscode.testMcpServer",
+				"title": "Stata: Test MCP Server Connection"
+			},
+			{
+				"command": "stata-vscode.restartSession",
+				"title": "Stata: Restart Session",
+				"icon": "$(debug-restart)"
+			}
+		],
+		"menus": {
+			"editor/title": [
+				{
+					"when": "resourceExtname == .do || resourceExtname == .ado || resourceExtname == .mata || editorLangId == stata",
+					"command": "stata-vscode.runSelection",
+					"group": "navigation"
+				},
+				{
+					"when": "resourceExtname == .do || resourceExtname == .ado || resourceExtname == .mata || editorLangId == stata",
+					"command": "stata-vscode.runFile",
+					"group": "navigation"
+				},
+				{
+					"when": "resourceExtname == .do || resourceExtname == .ado || resourceExtname == .mata || editorLangId == stata",
+					"command": "stata-vscode.stopExecution",
+					"group": "navigation"
+				},
+				{
+					"when": "resourceExtname == .do || resourceExtname == .ado || resourceExtname == .mata || editorLangId == stata",
+					"command": "stata-vscode.viewData",
+					"group": "navigation"
+				},
+				{
+					"when": "resourceExtname == .do || resourceExtname == .ado || resourceExtname == .mata || editorLangId == stata",
+					"command": "stata-vscode.showInteractive",
+					"group": "navigation"
+				},
+				{
+					"when": "resourceExtname == .do || resourceExtname == .ado || resourceExtname == .mata || editorLangId == stata",
+					"command": "stata-vscode.restartSession",
+					"group": "navigation"
+				}
+			],
+			"editor/context": [
+				{
+					"when": "resourceExtname == .do || resourceExtname == .ado || resourceExtname == .mata || editorLangId == stata",
+					"command": "stata-vscode.runSelection",
+					"group": "1_stata"
+				},
+				{
+					"when": "resourceExtname == .do || resourceExtname == .ado || resourceExtname == .mata || editorLangId == stata",
+					"command": "stata-vscode.runFile",
+					"group": "1_stata"
+				},
+				{
+					"when": "resourceExtname == .do || resourceExtname == .ado || resourceExtname == .mata || editorLangId == stata",
+					"command": "stata-vscode.stopExecution",
+					"group": "1_stata"
+				},
+				{
+					"when": "resourceExtname == .do || resourceExtname == .ado || resourceExtname == .mata || editorLangId == stata",
+					"command": "stata-vscode.restartSession",
+					"group": "1_stata"
+				}
+			]
+		},
+		"keybindings": [
+			{
+				"command": "stata-vscode.runSelection",
+				"key": "ctrl+shift+enter",
+				"mac": "cmd+shift+enter",
+				"when": "editorTextFocus && (editorLangId == stata || resourceExtname == .do || resourceExtname == .ado || resourceExtname == .mata)"
+			},
+			{
+				"command": "stata-vscode.runFile",
+				"key": "ctrl+shift+d",
+				"mac": "cmd+shift+d",
+				"when": "editorTextFocus && (editorLangId == stata || resourceExtname == .do || resourceExtname == .ado || resourceExtname == .mata)"
+			},
+			{
+				"command": "stata-vscode.stopExecution",
+				"key": "ctrl+shift+c",
+				"mac": "cmd+shift+c",
+				"when": "editorTextFocus && (editorLangId == stata || resourceExtname == .do || resourceExtname == .ado || resourceExtname == .mata)"
+			}
+		],
+		"configuration": {
+			"title": "Stata MCP",
+			"properties": {
+				"stata-vscode.stataPath": {
+					"type": "string",
+					"default": "",
+					"description": "Path to Stata installation directory"
+				},
+				"stata-vscode.mcpServerHost": {
+					"type": "string",
+					"default": "localhost",
+					"description": "Host for MCP server"
+				},
+				"stata-vscode.mcpServerPort": {
+					"type": "number",
+					"default": 4000,
+					"description": "Port for the MCP server"
+				},
+				"stata-vscode.autoStartServer": {
+					"type": "boolean",
+					"default": true,
+					"description": "Automatically start MCP server when extension activates"
+				},
+				"stata-vscode.autoDisplayGraphs": {
+					"type": "boolean",
+					"default": true,
+					"description": "Automatically display graphs when generated by Stata commands"
+				},
+				"stata-vscode.graphDisplayMethod": {
+					"type": "string",
+					"enum": [
+						"vscode",
+						"browser"
+					],
+					"default": "vscode",
+					"description": "Choose how to display graphs: 'vscode' (in VS Code webview panel) or 'browser' (in external web browser)"
+				},
+				"stata-vscode.interactiveDisplayMode": {
+					"type": "string",
+					"enum": [
+						"panel",
+						"browser"
+					],
+					"default": "panel",
+					"description": "Choose how to display the Interactive Window: 'panel' (VS Code webview panel) or 'browser' (external web browser)"
+				},
+				"stata-vscode.alwaysShowStatusBar": {
+					"type": "boolean",
+					"default": true,
+					"description": "Always show the Stata status bar item, even when not editing a Stata file"
+				},
+				"stata-vscode.debugMode": {
+					"type": "boolean",
+					"default": false,
+					"description": "Enable detailed debug logging for troubleshooting (shows DEBUG level messages from both extension and Python server)"
+				},
+				"stata-vscode.forcePort": {
+					"type": "boolean",
+					"default": false,
+					"description": "Force the MCP server to use the specified port even if it's already in use"
+				},
+				"stata-vscode.runFileTimeout": {
+					"type": "number",
+					"default": 600,
+					"description": "Timeout in seconds for 'Run File' operations (default: 600 seconds / 10 minutes)"
+				},
+				"stata-vscode.runSelectionTimeout": {
+					"type": "number",
+					"default": 600,
+					"description": "Timeout in seconds for 'Run Selection' and interactive window commands (default: 600 seconds / 10 minutes)"
+				},
+				"stata-vscode.stataEdition": {
+					"type": "string",
+					"enum": [
+						"mp",
+						"se",
+						"be"
+					],
+					"default": "mp",
+					"description": "Stata edition to use (MP, SE, BE) - default: MP"
+				},
+				"stata-vscode.logFileLocation": {
+					"type": "string",
+					"enum": [
+						"dofile",
+						"parent",
+						"workspace",
+						"extension",
+						"custom"
+					],
+					"default": "extension",
+					"description": "Location for Stata log files: 'dofile' (same directory as .do file), 'parent' (parent directory of .do file), 'workspace' (VS Code workspace root), 'extension' (logs folder in extension directory - default), or 'custom' (user-specified directory)"
+				},
+				"stata-vscode.customLogDirectory": {
+					"type": "string",
+					"default": "",
+					"description": "Custom directory for Stata log files (only used when logFileLocation is set to 'custom')"
+				},
+				"stata-vscode.resultDisplayMode": {
+					"type": "string",
+					"enum": [
+						"compact",
+						"full"
+					],
+					"default": "compact",
+					"description": "Result display mode for MCP returns: 'compact' (filters verbose output to save tokens) or 'full' (complete output). Compact mode removes program definitions, Mata blocks, change messages, and compresses whitespace."
+				},
+				"stata-vscode.maxOutputTokens": {
+					"type": "number",
+					"default": 10000,
+					"description": "Maximum tokens (approx. 4 chars each) for MCP output. When exceeded, output is saved to file and path is returned instead. Set to 0 for unlimited."
+				},
+				"stata-vscode.workingDirectory": {
+					"type": "string",
+					"enum": [
+						"dofile",
+						"parent",
+						"workspace",
+						"extension",
+						"custom",
+						"none"
+					],
+					"default": "dofile",
+					"description": "Working directory when running .do files: 'dofile' (same as .do file - default), 'parent' (parent directory of .do file), 'workspace' (VS Code workspace root), 'extension' (logs folder in extension directory), 'custom' (user-specified), or 'none' (don't change directory)"
+				},
+				"stata-vscode.customWorkingDirectory": {
+					"type": "string",
+					"default": "",
+					"description": "Custom working directory path (only used when workingDirectory is set to 'custom')"
+				},
+				"stata-vscode.multiSession": {
+					"type": "boolean",
+					"default": true,
+					"description": "Enable multi-session mode for parallel Stata execution. Each session runs in a separate process with isolated state."
+				},
+				"stata-vscode.maxSessions": {
+					"type": "number",
+					"default": 100,
+					"minimum": 1,
+					"maximum": 100,
+					"description": "Maximum number of concurrent Stata sessions when multi-session mode is enabled (default: 100)"
+				},
+				"stata-vscode.sessionTimeout": {
+					"type": "number",
+					"default": 3600,
+					"minimum": 60,
+					"description": "Session idle timeout in seconds (default: 3600 = 1 hour). Sessions are automatically destroyed after this period of inactivity."
+				},
+				"stata-vscode.dataViewerMaxRows": {
+					"type": "number",
+					"default": 100000,
+					"minimum": 100,
+					"maximum": 500000,
+					"description": "Maximum rows in Data Viewer. Uses virtual scrolling. WARNING: Setting above 500K may cause slow loading or browser issues due to JSON transfer size."
+				}
+			}
+		},
+		"languages": [
+			{
+				"id": "stata",
+				"extensions": [
+					".do",
+					".ado",
+					".doh",
+					".mata"
+				],
+				"aliases": [
+					"Stata",
+					"STATA",
+					"stata"
+				],
+				"configuration": "./src/language-configuration.json"
+			}
+		],
+		"grammars": [
+			{
+				"language": "stata",
+				"scopeName": "source.stata",
+				"path": "./src/syntaxes/stata.tmLanguage.json"
+			}
+		]
+	},
+	"scripts": {
+		"start-mcp-server": "node ./src/start-server.js --port 4000 --force-port",
+		"postinstall": "node ./src/check-python.js",
+		"webpack": "webpack --config config/webpack.config.js",
+		"watch": "webpack --watch",
+		"package": "npm run webpack && vsce package --allow-star-activation",
+		"compile": "npm run webpack",
+		"test:platform": "node ./src/test-platform.js",
+		"test:extension": "node ./src/test-extension.js",
+		"test:mcp-server": "node ./src/test-mcp-server.js",
+		"test:python": "node ./src/test-python-detection.js",
+		"test:python:simple": "node ./src/test-python-detection-simple.js",
+		"test:install:uv": "node ./src/check-python.js",
+		"test:uv": "uv --version",
+		"test": "npm run test:platform && npm run test:extension && npm run test:mcp-server",
+		"clear-port": "node ./src/clear-port.js",
+		"start-server": "npm run clear-port && npm run start-mcp-server"
+	},
+	"dependencies": {
+		"adm-zip": "^0.5.16",
+		"axios": "^1.13.2",
+		"resolve": "^1.22.11"
+	},
+	"devDependencies": {
+		"@types/glob": "^7.2.0",
+		"@types/mocha": "^9.1.1",
+		"@types/node": "16.x",
+		"@types/vscode": "^1.75.0",
+		"@typescript-eslint/eslint-plugin": "^5.31.0",
+		"@typescript-eslint/parser": "^5.31.0",
+		"@vscode/test-electron": "^2.1.5",
+		"eslint": "^8.20.0",
+		"glob": "^8.0.3",
+		"mocha": "^10.0.0",
+		"typescript": "^4.7.4",
+		"webpack": "^5.98.0",
+		"webpack-cli": "^6.0.1"
+	},
+	"capabilities": {
+		"untrustedWorkspaces": {
+			"supported": "limited",
+			"description": "MCP services require a trusted workspace."
+		}
+	}
+}
