@@ -849,8 +849,8 @@ capture log close _all
                     # Get current dataset as DataFrame with efficient filtering and row limits
                     if_condition = payload.get('if_condition', None)
                     max_rows = payload.get('max_rows', 10000)
-                    # Ensure minimum value (no hard upper limit - controlled by extension settings)
-                    max_rows = max(100, max_rows)
+                    # Allow small previews from the CLI while still rejecting empty requests.
+                    max_rows = max(1, max_rows)
 
                     try:
                         if stata is None:

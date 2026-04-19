@@ -1,805 +1,149 @@
-# Stata MCP for Codex and Native MCP Clients
+# stata-cli
 
-[![en](https://img.shields.io/badge/lang-English-red.svg)](./README.md)
-[![cn](https://img.shields.io/badge/语言-中文-yellow.svg)](./README.zh-CN.md)
-[![VS Code Marketplace](https://img.shields.io/badge/VS%20Code-Marketplace-blue)](https://marketplace.visualstudio.com/items?itemName=DeepEcon.stata-mcp)
-![VS Code Marketplace](https://img.shields.io/visual-studio-marketplace/i/deepecon.stata-mcp.svg)
-![GitHub all releases](https://img.shields.io/github/downloads/hanlulong/stata-mcp/total.svg)
-[![GitHub license](https://img.shields.io/github/license/hanlulong/stata-mcp)](https://github.com/hanlulong/stata-mcp/blob/main/LICENSE) 
+`stata-cli` is a lightweight local CLI for running Stata through the Python/PyStata backend in this repository.
 
+This repository is now focused on the CLI workflow: install the Python runtime, download the `stata-cli` binary, install the Codex skill, and use the command directly from anywhere on your machine.
 
-This repository now ships as a **standalone native MCP server** for Stata. Its primary target is direct use from [OpenAI Codex](https://github.com/openai/codex) and other MCP clients over **stdio**, without requiring VS Code, Cursor, Antigravity, or `mcp-proxy`.
+## Install
 
-The older VS Code/Cursor/Antigravity extension assets are still present as a legacy compatibility path, but they are no longer the main product or the recommended installation flow.
+### 1. Prepare the Python backend
 
-## Quick Start
-
-1. Install a Python 3.11 environment. `stata-mcp` is pinned to Python `>=3.11,<3.12` because Stata's Python bridge is not compatible with the newer 3.14 runtime that `uv` may otherwise choose automatically.
-2. Sync dependencies:
+`stata-cli` depends on the local Python backend in this repository. Use Python 3.11 because the Stata Python bridge is not compatible with newer runtimes.
 
 ```bash
 uv sync --all-extras --python 3.11
 ```
 
-3. Run the native MCP server:
+### 2. Download and install the CLI binary
+
+Release `v0.0.1` ships a macOS Apple Silicon binary named `stata-cli-darwin-arm64.tar.gz`.
+
+Install it into `~/.local/bin`:
 
 ```bash
-uv run stata-mcp --stata-path /Applications/Stata
+mkdir -p ~/.local/bin
+curl -L https://github.com/VO-VOO/stata-cli/releases/download/v0.0.1/stata-cli-darwin-arm64.tar.gz \
+  | tar -xz -C ~/.local/bin
 ```
 
-4. Or connect it directly from Codex by editing `~/.codex/config.toml`:
+If `~/.local/bin` is not already on `PATH`, add this to your shell config:
+
+```bash
+export PATH="$HOME/.local/bin:$PATH"
+```
+
+### 3. Point the CLI at this repository
+
+The binary needs to know where the Python backend lives. Create `~/.config/stata-cli/config.toml`:
 
 ```toml
-[mcp_servers.stata-mcp]
-command = "uv"
-args = ["run", "--directory", "/absolute/path/to/stata-mcp", "stata-mcp", "--stata-path", "/Applications/Stata"]
-enabled = true
+project_root = "/absolute/path/to/stata-cli"
 ```
 
-## Native MCP Features
+Example:
 
-- **Native stdio MCP**: Codex can launch the server directly with no VS Code host and no `mcp-proxy`
-- **Run Stata code**: `stata_run_selection` and `stata_run_file`
-- **Structured execution output**: output, session id, log file, and graph artifacts
-- **Session management**: create, inspect, list, destroy, stop, and restart sessions
-- **Multi-session parallel execution**: isolated worker sessions for concurrent Stata tasks
-- **Legacy HTTP path**: the FastAPI transport remains available through `stata-mcp-http`, but it is now optional and secondary
+```toml
+project_root = "/Users/utolaris/Documents/ai/stata-mcp"
+```
 
-## Local CLI
+### 4. Install the Codex skill
 
-The repo also ships a local Rust CLI named `stata-cli`. It does not speak MCP; instead, it wraps the local Python/PyStata backend directly.
-
-Build and install it globally:
+Copy the bundled skill into Codex's local skill directory:
 
 ```bash
-cargo install --path /Users/utolaris/Documents/ai/stata-mcp/rust-cli --force
+mkdir -p ~/.codex/skills/stata-cli
+cp skills/stata-cli/SKILL.md ~/.codex/skills/stata-cli/SKILL.md
 ```
 
-Examples:
+### 5. Verify the setup
+
+```bash
+stata-cli doctor
+```
+
+## Capabilities
+
+### Run Stata code
 
 ```bash
 stata-cli run --code 'display 1+1'
-stata-cli file /absolute/path/to/test.do
+```
+
+- Execute inline Stata code
+- Pass `--working-dir`, `--timeout`, `--stata-path`, and `--stata-edition` when needed
+- Use `--json` for structured output
+
+### Run a `.do` file
+
+```bash
+stata-cli file /absolute/path/to/script.do
+```
+
+- Execute local `.do` files
+- Return output, effective session id, log path, and graph artifacts when available
+
+### Start a minimal REPL
+
+```bash
 stata-cli repl
+```
+
+- Run one Stata command at a time in a simple interactive shell
+
+### Diagnose the local environment
+
+```bash
 stata-cli doctor
-stata-cli --json run --code 'display 1+1'
+stata-cli --json doctor
 ```
 
-`stata-cli` now resolves the Python backend in this order:
+- Check repo root resolution
+- Check backend script presence
+- Check Python 3.11 resolution
+- Run a minimal backend probe
 
-1. `STATA_CLI_PROJECT_ROOT`
-2. the current working directory or one of its parent directories
-3. `~/.config/stata-cli/config.toml`
-4. the repo path embedded at install time
-
-If you move the repository after installing the CLI, create `~/.config/stata-cli/config.toml` with:
-
-```toml
-project_root = "/absolute/path/to/stata-mcp"
-```
-
-Use `stata-cli doctor` to verify repo root discovery, backend availability, Python 3.11 resolution, and a minimal `display 1+1` backend probe.
-
-## Features
-
-- **Run Stata Commands**: Execute selections or entire .do files directly from your editor
-- **Real-time Output**: See Stata results instantly in your editor
-- **Syntax Highlighting**: Full syntax support for Stata .do, .ado, .mata, and .doh files
-- **AI Assistant Integration**: Contextual help and code suggestions via MCP
-- **Cross-platform**: Works on Windows, macOS, and Linux
-- **Multi-Session Parallel Execution**: Run multiple Stata sessions simultaneously with AI coding tools
-
-## Demo
-
-Watch how this extension enhances your Stata workflow with Cursor (or VS Code/Antigravity) and AI assistance:
-
-![Stata MCP Extension Demo](images/demo_2x.gif)
-
-**[🎬 Full Video Version](https://github.com/hanlulong/stata-mcp/raw/main/images/demo.mp4)** &nbsp;&nbsp;|&nbsp;&nbsp; **[📄 View Generated PDF Report](docs/examples/auto_report.pdf)**
-
-<sub>*Demo prompt: "Write and execute Stata do-files, ensuring that full absolute file paths are used in all cases. Load the auto dataset (webuse auto) and generate summary statistics for each variable. Identify and extract key features from the dataset, produce relevant plots, and save them in a folder named plots. Conduct a regression analysis to examine the main determinants of car prices. Export all outputs to a LaTeX file and compile it. Address any compilation errors automatically, and ensure that LaTeX compilation does not exceed 10 seconds. All code errors should be identified and resolved as part of the workflow."*</sub>
-
-> **Looking for other Stata integrations?**
-> - Use Stata with Notepad++ and Sublime Text 3? See [here](https://github.com/sook-tusk/Tech_Integrate_Stata_R_with_Editors)
-> - Use Stata via Jupyter? See [here](https://github.com/hanlulong/stata-mcp/blob/main/docs/jupyter-stata.md)
-
-
-## Requirements
-
-- Stata 17 or higher installed on your machine
-- [UV](https://github.com/astral-sh/uv) package manager (automatically installed or can be installed manually if needed)
-
-## Installation
-
-> **Note:** Initial installation requires setting up dependencies which may take up to 2 minutes to complete. Please be patient during this one-time setup process. All subsequent runs will start instantly.
-
-### VS Code Installation
-
-#### Option 1: From VS Code Marketplace
-
-Install this extension directly from the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=DeepEcon.stata-mcp).
+### Preview data
 
 ```bash
-code --install-extension DeepEcon.stata-mcp
+stata-cli --json data view --input-dta /absolute/path/to/data.dta --max-rows 20
+stata-cli --json data view --if-condition 'iq > 110' --max-rows 10
 ```
 
-Or:
-1. Open VS Code
-2. Go to Extensions view (Ctrl+Shift+X)
-3. Search for "Stata MCP"
-4. Click "Install"
+- Preview rows from the current dataset
+- Preview rows directly from a `.dta` file with `--input-dta`
+- Filter with `--if-condition`
+- Limit rows with `--max-rows`
 
-#### Option 2: From .vsix file
-
-1. Download the extension package `stata-mcp-0.5.1.vsix` from the [releases page](https://github.com/hanlulong/stata-mcp/releases).
-2. Install using one of these methods:
+### Export data to CSV
 
 ```bash
-code --install-extension path/to/stata-mcp-0.5.1.vsix
+stata-cli data export-csv --input-dta /absolute/path/to/data.dta --output /absolute/path/to/out.csv --replace
 ```
 
-Or:
-1. Open VS Code
-2. Go to Extensions view (Ctrl+Shift+X)
-3. Click on "..." menu in the top-right
-4. Select "Install from VSIX..."
-5. Navigate to and select the downloaded .vsix file
+- Convert a `.dta` file to CSV
+- Export the current dataset to CSV
+- Overwrite an existing CSV with `--replace`
 
-### Cursor Installation
+## Common failure reasons
 
-1. Download the extension package `stata-mcp-0.5.1.vsix` from the [releases page](https://github.com/hanlulong/stata-mcp/releases).
-2. Install using one of these methods:
+- `stata-cli` is not installed or not on `PATH`
+- Python 3.11 is missing
+- The repository path in `~/.config/stata-cli/config.toml` is wrong
+- Stata is not installed, or `--stata-path` points to the wrong location
+- PyStata or the local Stata Python bridge is unavailable
+- The target `.do` or `.dta` file path does not exist
+
+If setup looks wrong, start with:
 
 ```bash
-cursor --install-extension path/to/stata-mcp-0.5.1.vsix
+stata-cli doctor
 ```
 
-Or:
-1. Open Cursor
-2. Go to Extensions view
-3. Click on the "..." menu
-4. Select "Install from VSIX"
-5. Navigate to and select the downloaded .vsix file
+## Release
 
-### Antigravity Installation
-
-Google Antigravity uses the [Open VSX Registry](https://open-vsx.org/extension/DeepEcon/stata-mcp) by default, so you can install directly:
-
-1. Open Antigravity
-2. Go to Extensions view (Cmd+Shift+X)
-3. Search for "Stata MCP"
-4. Click "Install"
-
-Or install from .vsix file:
-
-```bash
-antigravity --install-extension path/to/stata-mcp-0.5.1.vsix
-```
-
-Starting with version 0.1.8, the extension integrates a fast Python package installer called `uv` to set up the environment. If uv is not found on your system, the extension will attempt to install it automatically.
-
-## Usage
-
-### Running Stata Code
-
-1. Open a Stata .do file
-2. Run commands using:
-   - **Run Selection**: Select Stata code and press `Ctrl+Shift+Enter` (or `Cmd+Shift+Enter` on Mac), or click the play button in the editor toolbar
-   - **Run File**: Press `Ctrl+Shift+D` (or `Cmd+Shift+D` on Mac) to run the entire .do file, or click the run-all button in the toolbar
-   - **Stop Execution**: Press `Ctrl+Shift+C` (or `Cmd+Shift+C` on Mac) to stop a running command
-   - **Restart Session**: Click the restart button in the editor toolbar or use the Command Palette ("Stata: Restart Session") to reset the Stata session. This clears all in-memory data, globals, and programs — equivalent to closing and reopening Stata
-   - **Interactive Mode**: Click the graph button in the editor toolbar to run code in an interactive browser window
-3. View output in the Stata Output panel
-
-> **Note for Cursor/Antigravity Users**: Toolbar buttons may be hidden by default. To show them:
-> 1. Click the **...** (three dots) menu in the editor title bar
-> 2. Select **"Configure Icon Visibility"**
-> 3. Enable the Stata buttons you want to see (Run Selection, Run File, Stop, View Data, Restart Session, Interactive)
-
-### Data Viewer
-
-Access the data viewer to inspect your Stata dataset:
-
-1. Click the **View Data** button (fourth button, table icon) in the editor toolbar
-2. View your current dataset in a table format
-3. **Filter data**: Use Stata `if` conditions to view subsets of your data
-   - Example: `price > 5000 & mpg < 30`
-   - Type your condition in the filter box and click "Apply"
-   - Click "Clear" to remove the filter and view all data
-
-### Graph Display Options
-
-Control how graphs are displayed:
-
-1. **Auto-display graphs**: Graphs are automatically shown when generated (default: enabled)
-   - Disable in Extension Settings: `stata-vscode.autoDisplayGraphs`
-2. **Choose display method**:
-   - **VS Code webview** (default): Graphs appear in a panel within VS Code
-   - **External browser**: Graphs open in your default web browser
-   - Change in Extension Settings: `stata-vscode.graphDisplayMethod`
-
-## Detailed Configurations
-
-<details>
-<summary><strong>Extension Settings</strong></summary>
-
-Customize the extension behavior through VS Code settings. Access these settings via:
-- **VS Code/Cursor/Antigravity**: File > Preferences > Settings (or `Ctrl+,` / `Cmd+,`)
-- Search for "Stata MCP" to find all extension settings
-
-### Core Settings
-
-| Setting | Description | Default |
-|---------|-------------|---------|
-| `stata-vscode.stataPath` | Path to Stata installation directory | Auto-detected |
-| `stata-vscode.stataEdition` | Stata edition to use (MP, SE, BE) | `mp` |
-| `stata-vscode.autoStartServer` | Automatically start MCP server when extension activates | `true` |
-
-### Server Settings
-
-| Setting | Description | Default |
-|---------|-------------|---------|
-| `stata-vscode.mcpServerHost` | Host for MCP server | `localhost` |
-| `stata-vscode.mcpServerPort` | Port for the MCP server | `4000` |
-| `stata-vscode.forcePort` | Force the specified port even if it's already in use | `false` |
-
-### Graph Settings
-
-| Setting | Description | Default |
-|---------|-------------|---------|
-| `stata-vscode.autoDisplayGraphs` | Automatically display graphs when generated by Stata commands | `true` |
-| `stata-vscode.graphDisplayMethod` | Choose how to display graphs: `vscode` (webview panel) or `browser` (external browser) | `vscode` |
-
-### Log File Settings
-
-| Setting | Description | Default |
-|---------|-------------|---------|
-| `stata-vscode.logFileLocation` | Location for Stata log files: `dofile` (same directory as .do file), `parent` (parent directory of .do file), `workspace` (VS Code workspace root), `extension` (logs folder in extension directory), or `custom` (user-specified directory) | `extension` |
-| `stata-vscode.customLogDirectory` | Custom directory for Stata log files (only used when logFileLocation is set to `custom`) | Empty |
-
-### Advanced Settings
-
-| Setting | Description | Default |
-|---------|-------------|---------|
-| `stata-vscode.runFileTimeout` | Timeout in seconds for 'Run File' operations | `600` (10 minutes) |
-| `stata-vscode.runSelectionTimeout` | Timeout in seconds for 'Run Selection' and interactive window commands | `600` (10 minutes) |
-| `stata-vscode.debugMode` | Show detailed debug information in output panel | `false` |
-
-### Working Directory Settings
-
-Control which directory Stata uses when running .do files:
-
-| Setting | Description | Default |
-|---------|-------------|---------|
-| `stata-vscode.workingDirectory` | Working directory when running .do files: `dofile` (same as .do file), `parent` (parent directory of .do file), `workspace` (VS Code workspace root), `extension` (logs folder in extension directory), `custom` (user-specified), or `none` (don't change directory) | `dofile` |
-| `stata-vscode.customWorkingDirectory` | Custom working directory path (only used when workingDirectory is set to `custom`) | Empty |
-
-**Example:** If your project structure is `project/code/analysis.do` and your do-file expects to run from `project/`, set `workingDirectory` to `parent`.
-
-### MCP Output Settings
-
-These settings control how Stata output is returned to AI assistants (LLMs) via the MCP protocol, helping to reduce token usage:
-
-| Setting | Description | Default |
-|---------|-------------|---------|
-| `stata-vscode.resultDisplayMode` | Output mode for MCP returns: `compact` (filters redundant output to save tokens) or `full` (returns complete output) | `compact` |
-| `stata-vscode.maxOutputTokens` | Maximum tokens for MCP output (0 = unlimited). Large outputs are saved to file with a path returned instead | `10000` |
-
-**Compact mode filters:**
-- Loop code echoes (foreach/forvalues/while blocks) - keeps actual output only
-- Program definitions and Mata blocks
-- Command echoes and line continuations (for `run_file` only)
-- Verbose messages like "(N real changes made)" and "(N missing values generated)"
-
-### Multi-Session Settings
-
-Enable parallel Stata execution with isolated sessions. Each session has its own data, variables, and macros.
-
-| Setting | Description | Default |
-|---------|-------------|---------|
-| `stata-vscode.multiSession` | Enable multi-session mode for parallel Stata execution | `true` |
-| `stata-vscode.maxSessions` | Maximum number of concurrent sessions (1-100) | `100` |
-| `stata-vscode.sessionTimeout` | Session idle timeout in seconds. Sessions are automatically destroyed after this period of inactivity | `3600` |
-
-**Note:** Each session requires ~200-300 MB RAM for Stata. Check your Stata license for concurrent instance limits.
-
-<br>
-
-</details>
-<details>
-<summary><strong>GitHub Copilot</strong></summary>
-
-[GitHub Copilot](https://github.com/features/copilot) supports MCP (Model Context Protocol) starting from VS Code 1.102. You can connect the Stata MCP server to Copilot for AI-powered Stata development.
-
-### Configuration
-
-1. **Install the Stata MCP extension** in VS Code (see [Installation](#installation) section above)
-
-2. **Start the Stata MCP server**: The server should start automatically when you open VS Code with the extension installed. Verify it's running by checking the status bar (should show "Stata").
-
-3. **Add the Stata MCP server to Copilot**: You can configure MCP servers either per-workspace or globally.
-
-   **Option A: Per-Workspace Configuration**
-
-   Create a `.vscode/mcp.json` file in your workspace root:
-   ```json
-   {
-     "servers": {
-       "stata-mcp": {
-         "type": "sse",
-         "url": "http://localhost:4000/mcp"
-       }
-     }
-   }
-   ```
-
-   **Option B: Global Configuration (All Workspaces)**
-
-   1. Open Command Palette (Ctrl+Shift+P / Cmd+Shift+P)
-   2. Type **"MCP: Open User Configuration"** and select it
-   3. Add the Stata MCP server to the `mcp.json` file:
-      ```json
-      {
-        "servers": {
-          "stata-mcp": {
-            "type": "sse",
-            "url": "http://localhost:4000/mcp"
-          }
-        }
-      }
-      ```
-
-   The user-level `mcp.json` file is located at:
-   - **Windows**: `%APPDATA%\Code\User\mcp.json`
-   - **macOS**: `~/Library/Application Support/Code/User/mcp.json`
-   - **Linux**: `~/.config/Code/User/mcp.json`
-
-4. **Reload VS Code** to apply the configuration.
-
-5. GitHub Copilot will now have access to Stata tools and can help you:
-   - Write and execute Stata commands
-   - Analyze your data
-   - Generate visualizations
-   - Debug Stata code
-   - Create statistical reports
-
-### Verifying the Connection
-
-1. Open GitHub Copilot Chat (Ctrl+Shift+I / Cmd+Shift+I)
-2. Type `@mcp` to see available MCP tools
-3. The Stata tools (`stata_run_selection`, `stata_run_file`) should appear
-
-### Troubleshooting
-
-If Copilot is not recognizing the Stata MCP server:
-1. Verify VS Code version 1.102 or later
-2. Verify the MCP server is running (Status bar should show "Stata")
-3. Check that `.vscode/mcp.json` exists with the correct content
-4. Try restarting VS Code
-5. Check the extension output panel (View > Output > Stata MCP) for any errors
-6. Ensure MCP is enabled in your organization's Copilot policy (if applicable)
-
-<br>
-
-</details>
-<details>
-<summary><strong>Claude Code</strong></summary>
-
-[Claude Code](https://claude.com/product/claude-code) is Anthropic's official AI coding assistant available in VS Code, Cursor, and Antigravity. Follow these steps to configure the Stata MCP server:
-
-### Installation
-
-1. **Install the Stata MCP extension** in VS Code, Cursor, or Antigravity (see [Installation](#installation) section above)
-
-2. **Start the Stata MCP server**: The server should start automatically when you open your IDE with the extension installed. Verify it's running by checking the status bar (should show "Stata").
-
-### Configuration
-
-Once the Stata MCP server is running, configure Claude Code to connect to it:
-
-1. Open your terminal or command palette
-
-2. Run the following command to add the Stata MCP server:
-   ```bash
-   claude mcp add --transport sse stata-mcp http://localhost:4000/mcp --scope user
-   ```
-
-3. Restart your IDE
-
-4. Claude Code will now have access to Stata tools and can help you:
-   - Write and execute Stata commands
-   - Analyze your data
-   - Generate visualizations
-   - Debug Stata code
-   - Create statistical reports
-
-### Verifying the Connection
-
-To verify Claude Code is properly connected to the Stata MCP server:
-
-1. Open a Stata .do file or create a new one
-2. Ask Claude Code to help with a Stata task (e.g., "Load the auto dataset and show summary statistics")
-3. Claude Code should be able to execute Stata commands and show results
-
-### Troubleshooting
-
-If Claude Code is not recognizing the Stata MCP server:
-1. Verify the MCP server is running (Status bar should show "Stata")
-2. Check that you ran the `claude mcp add` command with the correct URL
-3. Try restarting your IDE
-4. Check the extension output panel (View > Output > Stata MCP) for any errors
-5. Ensure there are no port conflicts (default port is 4000)
-
-<br>
-
-</details>
-<details>
-<summary><strong>Claude Desktop</strong></summary>
-
-You can use this extension with [Claude Desktop](https://claude.ai/download) through [mcp-proxy](https://github.com/modelcontextprotocol/mcp-proxy):
-
-1. Make sure the Stata MCP extension is installed in VS Code, Cursor, or Antigravity and currently running before attempting to configure Claude Desktop
-2. Install [mcp-proxy](https://github.com/modelcontextprotocol/mcp-proxy):
-   ```bash
-   # Using pip
-   pip install mcp-proxy
-
-   # Or using uv (faster)
-   uv install mcp-proxy
-   ```
-
-3. Find the path to mcp-proxy:
-   ```bash
-   # On Mac/Linux
-   which mcp-proxy
-
-   # On Windows (PowerShell)
-   (Get-Command mcp-proxy).Path
-   ```
-
-4. Configure Claude Desktop by editing the MCP config file:
-
-   **On Windows** (typically at `%APPDATA%\Claude Desktop\claude_desktop_config.json`):
-   ```json
-   {
-     "mcpServers": {
-       "stata-mcp": {
-         "command": "mcp-proxy",
-         "args": ["http://127.0.0.1:4000/mcp"]
-       }
-     }
-   }
-   ```
-
-   **On macOS** (typically at `~/Library/Application Support/Claude Desktop/claude_desktop_config.json`):
-   ```json
-   {
-     "mcpServers": {
-       "stata-mcp": {
-         "command": "/path/to/mcp-proxy",
-         "args": ["http://127.0.0.1:4000/mcp"]
-       }
-     }
-   }
-   ```
-   Replace `/path/to/mcp-proxy` with the actual path you found in step 3.
-
-5. Restart Claude Desktop
-
-6. Claude Desktop will automatically discover the available Stata tools, allowing you to run Stata commands and analyze data directly from your conversations.
-
-<br>
-
-</details>
-<details>
-<summary><strong>OpenAI Codex</strong></summary>
-
-Use the standalone native MCP server directly from [OpenAI Codex](https://github.com/openai/codex). `mcp-proxy` is no longer required.
-
-1. Prepare the project with Python 3.11:
-   ```bash
-   uv sync --all-extras --python 3.11
-   ```
-
-2. Configure Codex by editing `~/.codex/config.toml`:
-
-   **On macOS/Linux** (`~/.codex/config.toml`):
-   ```toml
-   [mcp_servers.stata-mcp]
-   command = "uv"
-   args = ["run", "--directory", "/absolute/path/to/stata-mcp", "stata-mcp", "--stata-path", "/Applications/Stata"]
-   enabled = true
-   ```
-
-   **On Windows** (`%USERPROFILE%\.codex\config.toml`):
-   ```toml
-   [mcp_servers.stata-mcp]
-   command = "uv"
-   args = ["run", "--directory", "C:\\path\\to\\stata-mcp", "stata-mcp", "--stata-path", "C:\\Program Files\\Stata18"]
-   enabled = true
-   ```
-
-3. If the file already contains other MCP servers, just add the `[mcp_servers.stata-mcp]` section.
-
-4. Restart Codex or your IDE.
-
-5. Codex will automatically discover the native Stata tools:
-   - `stata_run_selection`
-   - `stata_run_file`
-   - `stata_list_sessions`
-   - `stata_create_session`
-   - `stata_get_session`
-   - `stata_destroy_session`
-   - `stata_stop_execution`
-   - `stata_execution_status`
-   - `stata_restart_session`
-
-### Troubleshooting Codex Configuration
-
-If Codex is not recognizing the Stata MCP server:
-1. Verify the project environment was created with Python 3.11: `./.venv/bin/python --version`
-2. Check that `~/.codex/config.toml` points to this repo with `uv run --directory ... stata-mcp`
-3. Try launching the server manually:
-   ```bash
-   uv run stata-mcp --stata-path /Applications/Stata
-   ```
-4. Inspect the local log file (default: a temp file named `stata_mcp_stdio.log`)
-5. If you still need the older HTTP transport for debugging, run `uv run stata-mcp-http ...` separately, but keep Codex on the stdio entrypoint
-
-<br>
-
-</details>
-<details>
-<summary><strong>Cline</strong></summary>
-
-1. Open your [Cline](https://github.com/cline/cline) MCP settings file:
-   - **macOS**: `~/Library/Application Support/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json`
-   - **Windows**: `%APPDATA%/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json`
-   - **Linux**: `~/.config/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json`
-
-2. Add the Stata MCP server configuration:
-   ```json
-   {
-     "mcpServers": {
-       "stata-mcp": {
-         "url": "http://localhost:4000/mcp",
-         "transport": "sse"
-       }
-     }
-   }
-   ```
-
-3. If the file already contains other MCP servers, just add the `"stata-mcp"` entry to the existing `"mcpServers"` object.
-
-4. Save the file and restart VS Code.
-
-You can also configure Cline through VS Code settings:
-```json
-"cline.mcpSettings": {
-  "stata-mcp": {
-    "url": "http://localhost:4000/mcp",
-    "transport": "sse"
-  }
-}
-```
-
-### Troubleshooting Cline Configuration
-
-If Cline is not recognizing the Stata MCP server:
-1. Verify the MCP server is running (Status bar should show "Stata")
-2. Check that the configuration file exists with the correct content
-3. Try restarting VS Code
-4. Check the extension output panel (View > Output > Stata MCP) for any errors
-
-<br>
-
-</details>
-<details>
-<summary><strong>Cursor</strong></summary>
-
-The extension automatically configures [Cursor](https://www.cursor.com/) MCP integration. To verify it's working:
-
-1. Open Cursor
-2. Press `Ctrl+Shift+P` (or `Cmd+Shift+P` on Mac) to open the Command Palette
-3. Type "Stata: Test MCP Server Connection" and press Enter
-4. You should see a success message if the server is properly connected
-
-### Cursor Configuration File Paths
-
-The location of Cursor MCP configuration files varies by operating system:
-
-- **macOS**:
-  - Primary location: `~/.cursor/mcp.json`
-  - Alternative location: `~/Library/Application Support/Cursor/User/mcp.json`
-
-- **Windows**:
-  - Primary location: `%USERPROFILE%\.cursor\mcp.json`
-  - Alternative location: `%APPDATA%\Cursor\User\mcp.json`
-
-- **Linux**:
-  - Primary location: `~/.cursor/mcp.json`
-  - Alternative location: `~/.config/Cursor/User/mcp.json`
-
-### Manual Cursor Configuration
-
-If you need to manually configure Cursor MCP:
-
-1. Create or edit the MCP configuration file:
-   - **macOS/Linux**: `~/.cursor/mcp.json`
-   - **Windows**: `%USERPROFILE%\.cursor\mcp.json`
-
-2. Add the Stata MCP server configuration:
-   ```json
-   {
-     "mcpServers": {
-       "stata-mcp": {
-         "url": "http://localhost:4000/mcp",
-         "transport": "sse"
-       }
-     }
-   }
-   ```
-
-3. If the file already contains other MCP servers, just add the `"stata-mcp"` entry to the existing `"mcpServers"` object.
-
-4. Save the file and restart Cursor.
-
-### Troubleshooting Cursor Configuration
-
-If Cursor is not recognizing the Stata MCP server:
-1. Verify the MCP server is running
-2. Check that the configuration file exists with the correct content
-3. Try restarting Cursor
-4. Ensure there are no port conflicts with other running applications
-
-<br>
-
-</details>
-<details>
-<summary><strong>Python Environment Management</strong></summary>
-
-This extension uses [uv](https://github.com/astral-sh/uv), a fast Python package installer built in Rust, to manage Python dependencies. Key features:
-
-- Automatic Python setup and dependency management
-- Creates isolated environments that won't conflict with your system
-- Works across Windows, macOS, and Linux
-- 10-100x faster than traditional pip installations
-
-**If you encounter any UV-related errors during installation:**
-1. Install UV manually:
-   ```bash
-   # Windows (PowerShell as Administrator)
-   powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
-
-   # macOS/Linux
-   curl -LsSf https://astral.sh/uv/install.sh | sh
-   ```
-2. Follow the [Troubleshooting](#troubleshooting) steps to reinstall the extension
-
-Starting with version 0.1.8, this extension integrates the fast Python package installer [uv](https://github.com/astral-sh/uv) to set up the environment. If uv is not found on your system, the extension will attempt to install it automatically.
-
-<br>
-
-</details>
-
-## Troubleshooting
-
-If you encounter issues with the extension, follow these steps to perform a clean reinstallation:
-
-### Windows
-
-1. Close all VS Code/Cursor/Antigravity windows
-2. Open Task Manager (Ctrl+Shift+Esc):
-   - Go to the "Processes" tab
-   - Look for any running Python or `uvicorn` processes
-   - Select each one and click "End Task"
-
-3. Remove the extension folder:
-   - Press Win+R, type `%USERPROFILE%\.vscode\extensions` and press Enter
-   - Delete the folder `deepecon.stata-mcp-0.x.x` (where x.x is the version number)
-   - For Cursor: The path is `%USERPROFILE%\.cursor\extensions`
-   - For Antigravity: The path is `%USERPROFILE%\.antigravity\extensions`
-
-4. Install UV manually (if needed):
-   ```powershell
-   # Open PowerShell as Administrator and run:
-   powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
-   ```
-
-5. Restart your computer (recommended but optional)
-
-6. Install the latest version of the extension from the marketplace
-
-### macOS/Linux
-
-1. Close all VS Code/Cursor/Antigravity windows
-
-2. Kill any running Python processes:
-   ```bash
-   # Find Python processes
-   ps aux | grep python
-   # Kill them (replace <PID> with the process numbers you found)
-   kill -9 <PID>
-   ```
-
-3. Remove the extension folder:
-   ```bash
-   # For VS Code:
-   rm -rf ~/.vscode/extensions/deepecon.stata-mcp-0.x.x
-   # For Cursor:
-   rm -rf ~/.cursor/extensions/deepecon.stata-mcp-0.x.x
-   # For Antigravity:
-   rm -rf ~/.antigravity/extensions/deepecon.stata-mcp-0.x.x
-   ```
-
-4. Install UV manually (if needed):
-   ```bash
-   # Using curl:
-   curl -LsSf https://astral.sh/uv/install.sh | sh
-
-   # Or using wget:
-   wget -qO- https://astral.sh/uv/install.sh | sh
-   ```
-
-5. Restart your terminal or computer (recommended but optional)
-
-6. Install the latest version of the extension from the marketplace
-
-### Additional Troubleshooting Tips
-
-- If you see errors about Python or UV not being found, make sure they are in your system's PATH:
-  - Windows: Type "Environment Variables" in the Start menu and add the installation paths
-  - macOS/Linux: Add the paths to your `~/.bashrc`, `~/.zshrc`, or equivalent
-
-- If you get permission errors:
-  - Windows: Run your IDE as Administrator
-  - macOS/Linux: Check folder permissions with `ls -la` and fix with `chmod` if needed
-
-- If the extension still fails to initialize:
-  1. Open the Output panel (View -> Output)
-  2. Select "Stata-MCP" from the dropdown
-  3. Check the logs for specific error messages
-  4. If you see Python-related errors, try manually creating a Python 3.11 virtual environment:
-     ```bash
-     # Windows
-     py -3.11 -m venv .venv
-
-     # macOS/Linux
-     python3.11 -m venv .venv
-     ```
-
-- For persistent issues:
-  1. Check your system's Python installation: `python --version` or `python3 --version`
-  2. Verify UV installation: `uv --version`
-  3. Make sure you have Python 3.11 or later installed
-  4. Check if your antivirus software is blocking Python or UV executables
-
-- If you're having issues with a specific Stata edition:
-  1. Make sure the selected Stata edition (MP, SE, or BE) matches what's installed on your system
-  2. Try changing the `stata-vscode.stataEdition` setting to match your installed version
-  3. Restart the extension after changing settings
-
-When opening an issue on GitHub, please provide:
-- The complete error message from the Output panel (View -> Output -> Stata-MCP)
-- Your operating system and version
-- VS Code/Cursor/Antigravity version
-- Python version (`python --version`)
-- UV version (`uv --version`)
-- Steps to reproduce the issue
-- Any relevant log files or screenshots
-- The content of your MCP configuration file if applicable
-
-This detailed information will help us identify and fix the issue more quickly. You can open issues at: [GitHub Issues](https://github.com/hanlulong/stata-mcp/issues)
-
-## Star History
-
-[![Star History Chart](https://api.star-history.com/svg?repos=hanlulong/stata-mcp&type=Date)](https://star-history.com/#hanlulong/stata-mcp&Date)
+- Current CLI release: `v0.0.1`
+- Current binary crate version: `0.0.1`
 
 ## License
 
 MIT
-
-## Credits
-
-Created by Lu Han,
-Published by [DeepEcon.ai](https://deepecon.ai/)

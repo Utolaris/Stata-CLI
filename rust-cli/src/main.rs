@@ -1,6 +1,7 @@
 use anyhow::{bail, Context, Result};
 use clap::{Parser, Subcommand};
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use std::ffi::OsString;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -16,6 +17,8 @@ struct Cli {
     #[arg(long)]
     stata_path: Option<String>,
     #[arg(long)]
+    stata_edition: Option<String>,
+    #[arg(long)]
     python: Option<PathBuf>,
     #[arg(long)]
     session_id: Option<String>,
@@ -29,6 +32,18 @@ struct Cli {
     quiet: bool,
     #[arg(long, default_value = "WARNING")]
     log_level: String,
+    #[arg(long)]
+    result_display_mode: Option<String>,
+    #[arg(long)]
+    max_output_tokens: Option<u32>,
+    #[arg(long, conflicts_with = "no_multi_session")]
+    multi_session: bool,
+    #[arg(long, conflicts_with = "multi_session")]
+    no_multi_session: bool,
+    #[arg(long)]
+    max_sessions: Option<u32>,
+    #[arg(long)]
+    session_timeout: Option<u32>,
     #[command(subcommand)]
     command: Commands,
 }
@@ -44,6 +59,36 @@ enum Commands {
     },
     Repl,
     Doctor,
+    Data {
+        #[command(subcommand)]
+        command: DataCommands,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+enum DataCommands {
+    View {
+        #[arg(long)]
+        session_id: Option<String>,
+        #[arg(long)]
+        if_condition: Option<String>,
+        #[arg(long, default_value_t = 1000)]
+        max_rows: u32,
+        #[arg(long)]
+        input_dta: Option<PathBuf>,
+    },
+    ExportCsv {
+        #[arg(long)]
+        output: PathBuf,
+        #[arg(long)]
+        input_dta: Option<PathBuf>,
+        #[arg(long)]
+        session_id: Option<String>,
+        #[arg(long)]
+        working_dir: Option<PathBuf>,
+        #[arg(long)]
+        replace: bool,
+    },
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -128,6 +173,18 @@ fn main() -> Result<()> {
                 bail!("stata-cli repl exited with status {}", status);
             }
             Ok(())
+        }
+        Commands::Data { command } => {
+            let python = resolve_python(cli.python.as_deref(), &repo_root.path)?;
+            let (backend_command, backend_args) = data_backend_invocation(command);
+            let payload = invoke_backend_json(
+                &python.path,
+                &repo_root.path,
+                &cli,
+                backend_command,
+                backend_args,
+            )?;
+            render_json_payload(&payload, cli.json)
         }
     }
 }
@@ -313,8 +370,34 @@ fn base_backend_args(repo_root: &Path, cli: &Cli, json: bool) -> Vec<OsString> {
         args.push(OsString::from("--stata-path"));
         args.push(OsString::from(path));
     }
+    if let Some(edition) = &cli.stata_edition {
+        args.push(OsString::from("--stata-edition"));
+        args.push(OsString::from(edition));
+    }
     args.push(OsString::from("--log-level"));
     args.push(OsString::from(cli.log_level.clone()));
+    if let Some(mode) = &cli.result_display_mode {
+        args.push(OsString::from("--result-display-mode"));
+        args.push(OsString::from(mode));
+    }
+    if let Some(tokens) = cli.max_output_tokens {
+        args.push(OsString::from("--max-output-tokens"));
+        args.push(OsString::from(tokens.to_string()));
+    }
+    if cli.multi_session {
+        args.push(OsString::from("--multi-session"));
+    }
+    if cli.no_multi_session {
+        args.push(OsString::from("--no-multi-session"));
+    }
+    if let Some(max_sessions) = cli.max_sessions {
+        args.push(OsString::from("--max-sessions"));
+        args.push(OsString::from(max_sessions.to_string()));
+    }
+    if let Some(session_timeout) = cli.session_timeout {
+        args.push(OsString::from("--session-timeout"));
+        args.push(OsString::from(session_timeout.to_string()));
+    }
     if json {
         args.push(OsString::from("--json"));
     }
@@ -334,13 +417,84 @@ fn session_args(cli: &Cli) -> Vec<OsString> {
     args
 }
 
+fn data_backend_invocation(command: &DataCommands) -> (&'static str, Vec<OsString>) {
+    match command {
+        DataCommands::View {
+            session_id,
+            if_condition,
+            max_rows,
+            input_dta,
+        } => {
+            let mut args = vec![
+                OsString::from("view"),
+                OsString::from("--max-rows"),
+                OsString::from(max_rows.to_string()),
+            ];
+            if let Some(session_id) = session_id {
+                args.push(OsString::from("--session-id"));
+                args.push(OsString::from(session_id));
+            }
+            if let Some(if_condition) = if_condition {
+                args.push(OsString::from("--if-condition"));
+                args.push(OsString::from(if_condition));
+            }
+            if let Some(input_dta) = input_dta {
+                args.push(OsString::from("--input-dta"));
+                args.push(input_dta.as_os_str().to_os_string());
+            }
+            ("data", args)
+        }
+        DataCommands::ExportCsv {
+            output,
+            input_dta,
+            session_id,
+            working_dir,
+            replace,
+        } => {
+            let mut args = vec![
+                OsString::from("export-csv"),
+                OsString::from("--output"),
+                output.as_os_str().to_os_string(),
+            ];
+            if let Some(input_dta) = input_dta {
+                args.push(OsString::from("--input-dta"));
+                args.push(input_dta.as_os_str().to_os_string());
+            }
+            if let Some(session_id) = session_id {
+                args.push(OsString::from("--session-id"));
+                args.push(OsString::from(session_id));
+            }
+            if let Some(working_dir) = working_dir {
+                args.push(OsString::from("--working-dir"));
+                args.push(working_dir.as_os_str().to_os_string());
+            }
+            if *replace {
+                args.push(OsString::from("--replace"));
+            }
+            ("data", args)
+        }
+    }
+}
+
 fn invoke_backend(
     python: &Path,
     repo_root: &Path,
     cli: &Cli,
     command: &str,
-    mut command_args: Vec<OsString>,
+    command_args: Vec<OsString>,
 ) -> Result<ExecutionResult> {
+    let payload = invoke_backend_json(python, repo_root, cli, command, command_args.clone())?;
+    serde_json::from_value::<ExecutionResult>(payload)
+        .with_context(|| "Backend returned a non-execution payload".to_string())
+}
+
+fn invoke_backend_json(
+    python: &Path,
+    repo_root: &Path,
+    cli: &Cli,
+    command: &str,
+    mut command_args: Vec<OsString>,
+) -> Result<Value> {
     let backend = backend_script(repo_root);
     if !backend.exists() {
         bail!(
@@ -372,7 +526,7 @@ fn invoke_backend(
         bail!("Backend execution failed: {}", stderr.trim());
     }
 
-    serde_json::from_slice::<ExecutionResult>(&output.stdout).with_context(|| {
+    serde_json::from_slice::<Value>(&output.stdout).with_context(|| {
         format!(
             "Backend returned invalid JSON: {}",
             String::from_utf8_lossy(&output.stdout)
@@ -422,6 +576,32 @@ fn render_result(result: &ExecutionResult, emit_json: bool, quiet: bool) -> Resu
         );
     }
     Ok(())
+}
+
+fn render_json_payload(payload: &Value, emit_json: bool) -> Result<()> {
+    if emit_json {
+        println!("{}", serde_json::to_string_pretty(payload)?);
+    } else {
+        println!("{}", serde_json::to_string_pretty(payload)?);
+    }
+
+    let status = payload
+        .get("status")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    if matches!(
+        status,
+        "success" | "running" | "idle" | "stop_sent" | "stop_requested" | "not_running"
+    ) {
+        return Ok(());
+    }
+
+    let message = payload
+        .get("message")
+        .and_then(Value::as_str)
+        .or_else(|| payload.get("error").and_then(Value::as_str))
+        .unwrap_or("stata-cli command failed");
+    bail!("{message}")
 }
 
 fn spawn_repl(python: &Path, repo_root: &Path, cli: &Cli) -> Result<ExitStatus> {
@@ -618,6 +798,37 @@ mod tests {
         match cli.command {
             Commands::Doctor => {}
             _ => panic!("expected doctor command"),
+        }
+    }
+
+    #[test]
+    fn parse_data_export_command() {
+        let cli = Cli::parse_from([
+            "stata-cli",
+            "data",
+            "export-csv",
+            "--output",
+            "/tmp/out.csv",
+            "--input-dta",
+            "/tmp/input.dta",
+            "--replace",
+        ]);
+
+        match cli.command {
+            Commands::Data {
+                command:
+                    DataCommands::ExportCsv {
+                        output,
+                        input_dta,
+                        replace,
+                        ..
+                    },
+            } => {
+                assert_eq!(output, PathBuf::from("/tmp/out.csv"));
+                assert_eq!(input_dta, Some(PathBuf::from("/tmp/input.dta")));
+                assert!(replace);
+            }
+            _ => panic!("expected data export-csv command"),
         }
     }
 

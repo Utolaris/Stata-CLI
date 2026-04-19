@@ -51,3 +51,123 @@ def test_run_file_command_multi_session(monkeypatch):
     assert result.output == "file output"
     assert result.log_file == "/tmp/test.log"
     assert result.graphs[0].path == "/tmp/g1.png"
+
+
+def test_data_view_command_multi_session(monkeypatch):
+    class DummyManager:
+        def execute(self, code, session_id=None):
+            return {"status": "success", "session_id": session_id}
+
+        def get_data(self, **kwargs):
+            return {
+                "status": "success",
+                "data": [[1, 2]],
+                "columns": ["x", "y"],
+                "dtypes": {"x": "int64", "y": "int64"},
+                "rows": 1,
+                "total_rows": 1,
+                "displayed_rows": 1,
+                "max_rows": kwargs["max_rows"],
+                "index": [0],
+            }
+
+    monkeypatch.setattr(backend.legacy, "multi_session_enabled", True)
+    monkeypatch.setattr(backend.legacy, "session_manager", DummyManager())
+
+    result = backend.data_view_command("abc", "x > 0", 250, None)
+
+    assert result["status"] == "success"
+    assert result["columns"] == ["x", "y"]
+    assert result["max_rows"] == 250
+
+
+def test_data_view_command_with_input_dta(monkeypatch, tmp_path):
+    captured = {}
+
+    class DummyManager:
+        def execute(self, code, session_id=None):
+            captured["code"] = code
+            captured["session_id"] = session_id
+            return {"status": "success", "session_id": session_id}
+
+        def get_data(self, **kwargs):
+            return {
+                "status": "success",
+                "data": [[1, 2]],
+                "columns": ["x", "y"],
+                "dtypes": {"x": "int64", "y": "int64"},
+                "rows": 1,
+                "total_rows": 1,
+                "displayed_rows": 1,
+                "max_rows": kwargs["max_rows"],
+                "index": [0],
+            }
+
+    input_dta = tmp_path / "sample.dta"
+    input_dta.write_text("placeholder", encoding="utf-8")
+
+    monkeypatch.setattr(backend.legacy, "multi_session_enabled", True)
+    monkeypatch.setattr(backend.legacy, "session_manager", DummyManager())
+
+    result = backend.data_view_command("abc", "x > 0", 250, str(input_dta))
+
+    assert result["status"] == "success"
+    assert result["columns"] == ["x", "y"]
+    assert result["max_rows"] == 250
+    assert result["source_dta"] == str(input_dta)
+    assert 'use "' in captured["code"]
+
+
+def test_data_view_command_respects_small_max_rows(monkeypatch):
+    class DummyManager:
+        def get_data(self, **kwargs):
+            return {
+                "status": "success",
+                "data": [],
+                "columns": [],
+                "dtypes": {},
+                "rows": 0,
+                "total_rows": 0,
+                "displayed_rows": 0,
+                "max_rows": kwargs["max_rows"],
+                "index": [],
+            }
+
+    monkeypatch.setattr(backend.legacy, "multi_session_enabled", True)
+    monkeypatch.setattr(backend.legacy, "session_manager", DummyManager())
+
+    result = backend.data_view_command(None, None, 5, None)
+
+    assert result["status"] == "success"
+    assert result["max_rows"] == 5
+
+
+def test_data_export_csv_command_single_session(monkeypatch, tmp_path):
+    captured = {}
+
+    def fake_run_stata_selection(selection, working_dir, auto_detect):
+        captured["selection"] = selection
+        captured["working_dir"] = working_dir
+        return "ok"
+
+    monkeypatch.setattr(backend.legacy, "multi_session_enabled", False)
+    monkeypatch.setattr(backend.legacy, "session_manager", None)
+    monkeypatch.setattr(backend.legacy, "run_stata_selection", fake_run_stata_selection)
+    monkeypatch.setattr(backend.legacy, "process_mcp_output", lambda output, **kwargs: output)
+
+    input_dta = tmp_path / "sample.dta"
+    input_dta.write_text("placeholder", encoding="utf-8")
+    output_csv = tmp_path / "sample.csv"
+
+    result = backend.data_export_csv_command(
+        str(output_csv),
+        str(input_dta),
+        None,
+        str(tmp_path),
+        True,
+    )
+
+    assert result["status"] == "success"
+    assert result["output_csv"] == str(output_csv)
+    assert 'use "' in captured["selection"]
+    assert 'export delimited using "' in captured["selection"]

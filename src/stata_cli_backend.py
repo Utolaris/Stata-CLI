@@ -12,8 +12,11 @@ This module intentionally bypasses MCP and exposes a small JSON contract for:
 from __future__ import annotations
 
 import argparse
+import asyncio
+import json
 import os
 import sys
+from pathlib import Path
 from typing import Optional
 
 import stata_mcp
@@ -45,7 +48,7 @@ def _is_test_mode() -> bool:
     return os.getenv(TEST_MODE_ENV, "").strip().lower() in {"1", "true", "yes", "on"}
 
 
-def _mock_result_from_args(args: argparse.Namespace) -> ExecutionResult:
+def _mock_result_from_args(args: argparse.Namespace) -> object:
     session_id = getattr(args, "session_id", None) or SessionManager.DEFAULT_SESSION_ID
     working_dir = getattr(args, "working_dir", None) or ""
 
@@ -77,7 +80,161 @@ def _mock_result_from_args(args: argparse.Namespace) -> ExecutionResult:
             error=None,
         )
 
+    if args.command == "data":
+        if args.data_command == "view":
+            return {
+                "status": "success",
+                "columns": ["x", "y"],
+                "dtypes": {"x": "float64", "y": "float64"},
+                "rows": 2,
+                "total_rows": 2,
+                "displayed_rows": 2,
+                "max_rows": args.max_rows,
+                "index": [0, 1],
+                "data": [[1, 2], [3, 4]],
+                "source_dta": os.path.abspath(args.input_dta) if args.input_dta else None,
+            }
+        if args.data_command == "export-csv":
+            output_path = os.path.abspath(args.output)
+            Path(output_path).parent.mkdir(parents=True, exist_ok=True)
+            Path(output_path).write_text("x,y\n1,2\n3,4\n", encoding="utf-8")
+            return {
+                "status": "success",
+                "output": f"mock-export-csv output={output_path}",
+                "output_csv": output_path,
+                "session_id": session_id,
+            }
+
     return _render_error(f"Unsupported mock command: {args.command}", session_id=session_id)
+
+
+def _emit_json_payload(payload: object) -> int:
+    if isinstance(payload, ExecutionResult):
+        return _emit_json(payload)
+    sys.stdout.write(f"{json.dumps(payload, indent=2)}\n")
+    status = payload.get("status") if isinstance(payload, dict) else None
+    return 0 if status in {"success", "running", "idle", "stop_sent", "stop_requested", "not_running"} else 1
+
+
+def _print_human_payload(payload: object) -> None:
+    if isinstance(payload, ExecutionResult):
+        _print_human_result(payload)
+        return
+    print(json.dumps(payload, indent=2))
+
+
+def _session_error(message: str) -> dict:
+    return {"status": "error", "message": message}
+
+
+def data_view_command(
+    session_id: Optional[str],
+    if_condition: Optional[str],
+    max_rows: int,
+    input_dta: Optional[str],
+) -> dict:
+    max_rows = max(1, int(max_rows))
+    if input_dta:
+        input_path = os.path.abspath(os.path.expanduser(input_dta))
+        if not os.path.exists(input_path):
+            return _session_error(f"Input DTA file not found: {input_path}")
+        load_code = f'use "{input_path.replace(chr(92), "/")}", clear'
+        if legacy.multi_session_enabled and legacy.session_manager is not None:
+            load_result = legacy.session_manager.execute(
+                stata_mcp._build_selection_for_working_dir(load_code, None),
+                session_id=session_id,
+            )
+            if load_result.get("status") != "success":
+                return _session_error(load_result.get("error", f"Failed to load DTA file: {input_path}"))
+        else:
+            load_output = legacy.run_stata_selection(load_code, None, False)
+            filtered = legacy.process_mcp_output(
+                load_output.replace("\\n", "\n"),
+                for_mcp=True,
+                filter_command_echo=False,
+            )
+            if filtered.lower().startswith("error:"):
+                return _session_error(filtered)
+
+    if legacy.multi_session_enabled and legacy.session_manager is not None:
+        result = legacy.session_manager.get_data(
+            session_id=session_id,
+            if_condition=if_condition,
+            max_rows=max_rows,
+        )
+        if result.get("status") == "error":
+            return _session_error(result.get("error", "Failed to get data"))
+        result["status"] = "success"
+        result["source_dta"] = input_dta
+        return result
+
+    response = asyncio.run(
+        legacy.view_data_endpoint(
+            if_condition=if_condition,
+            session_id=session_id,
+            max_rows=max_rows,
+        )
+    )
+    payload = json.loads(response.body.decode("utf-8"))
+    if payload.get("status") == "error":
+        return _session_error(payload.get("message", "Failed to get data"))
+    payload["source_dta"] = input_dta
+    return payload
+
+
+def data_export_csv_command(
+    output: str,
+    input_dta: Optional[str],
+    session_id: Optional[str],
+    working_dir: Optional[str],
+    replace: bool,
+) -> dict:
+    output_path = os.path.abspath(os.path.expanduser(output))
+    output_dir = os.path.dirname(output_path)
+    if output_dir:
+        os.makedirs(output_dir, exist_ok=True)
+    if os.path.exists(output_path) and not replace:
+        return _session_error(f"Output file already exists: {output_path}. Use --replace to overwrite it.")
+
+    commands: list[str] = []
+    if input_dta:
+        input_path = os.path.abspath(os.path.expanduser(input_dta))
+        if not os.path.exists(input_path):
+            return _session_error(f"Input DTA file not found: {input_path}")
+        commands.append(f'use "{input_path.replace(chr(92), "/")}", clear')
+    commands.append(f'export delimited using "{output_path.replace(chr(92), "/")}", replace')
+    code = "\n".join(commands)
+
+    if legacy.multi_session_enabled and legacy.session_manager is not None:
+        result = legacy.session_manager.execute(
+            stata_mcp._build_selection_for_working_dir(code, working_dir),
+            session_id=session_id,
+        )
+        output = result.get("output", "").replace("\\n", "\n")
+        filtered = legacy.process_mcp_output(output, for_mcp=True, filter_command_echo=False)
+        status = result.get("status", "error")
+        return {
+            "status": status,
+            "output": filtered,
+            "output_csv": output_path,
+            "session_id": result.get("session_id", session_id),
+            "error": result.get("error") or None,
+        }
+
+    output_text = legacy.run_stata_selection(code, working_dir, False)
+    filtered = legacy.process_mcp_output(
+        output_text.replace("\\n", "\n"),
+        for_mcp=True,
+        filter_command_echo=False,
+    )
+    status = "success" if not filtered.lower().startswith("error:") else "error"
+    return {
+        "status": status,
+        "output": filtered,
+        "output_csv": output_path,
+        "session_id": session_id or SessionManager.DEFAULT_SESSION_ID,
+        "error": filtered if status == "error" else None,
+    }
 
 
 def _graphs_from_extra(extra: Optional[dict]) -> list[GraphArtifact]:
@@ -266,6 +423,22 @@ def build_parser() -> argparse.ArgumentParser:
     repl_parser.add_argument("--session-id")
     repl_parser.add_argument("--working-dir")
 
+    data_parser = subparsers.add_parser("data", help="Inspect the current dataset or export it")
+    data_subparsers = data_parser.add_subparsers(dest="data_command", required=True)
+
+    view_parser = data_subparsers.add_parser("view", help="View current data as structured rows")
+    view_parser.add_argument("--session-id")
+    view_parser.add_argument("--if-condition")
+    view_parser.add_argument("--max-rows", type=int, default=1000)
+    view_parser.add_argument("--input-dta")
+
+    export_parser = data_subparsers.add_parser("export-csv", help="Export the current dataset or a .dta file to CSV")
+    export_parser.add_argument("--output", required=True)
+    export_parser.add_argument("--input-dta")
+    export_parser.add_argument("--session-id")
+    export_parser.add_argument("--working-dir")
+    export_parser.add_argument("--replace", action="store_true")
+
     return parser
 
 
@@ -280,9 +453,11 @@ def main(argv: Optional[list[str]] = None) -> int:
             return 0
         result = _mock_result_from_args(args)
         if args.json:
-            return _emit_json(result)
-        _print_human_result(result)
-        return 0 if result.status == "success" else 1
+            return _emit_json_payload(result)
+        _print_human_payload(result)
+        if isinstance(result, ExecutionResult):
+            return 0 if result.status == "success" else 1
+        return 0 if result.get("status") != "error" else 1
 
     config_args: list[str] = []
     for name in (
@@ -324,6 +499,25 @@ def main(argv: Optional[list[str]] = None) -> int:
 
         if args.command == "repl":
             return repl_command(args.session_id, args.working_dir)
+
+        if args.command == "data":
+            if args.data_command == "view":
+                result = data_view_command(args.session_id, args.if_condition, args.max_rows, args.input_dta)
+            elif args.data_command == "export-csv":
+                result = data_export_csv_command(
+                    args.output,
+                    args.input_dta,
+                    args.session_id,
+                    args.working_dir,
+                    args.replace,
+                )
+            else:
+                result = _session_error(f"Unknown data command: {args.data_command}")
+
+            if args.json:
+                return _emit_json_payload(result)
+            _print_human_payload(result)
+            return 0 if result.get("status") != "error" else 1
 
         return _emit_json(_render_error(f"Unknown command: {args.command}"))
     except Exception as exc:

@@ -4101,8 +4101,8 @@ async def view_data_endpoint(if_condition: str = None, session_id: str = None, m
     """
     global stata_available, stata, multi_session_enabled, session_manager
 
-    # Ensure max_rows has minimum value (no hard upper limit - controlled by extension settings)
-    max_rows = max(100, max_rows)
+    # Allow small previews from the CLI while still rejecting empty requests.
+    max_rows = max(1, max_rows)
 
     try:
         # Route through session manager if multi-session mode is enabled
