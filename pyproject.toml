@@ -1,14 +1,14 @@
 [project]
-name = "stata-mcp"
-version = "0.6.0"
-description = "Standalone native MCP server for Stata, designed for Codex and other MCP clients"
+name = "stata-cli"
+version = "0.0.2"
+description = "A Stata CLI for AI agents, built from the original stata-mcp project without requiring VS Code"
 readme = "README.md"
 requires-python = ">=3.11,<3.12"
 license = {text = "MIT"}
 authors = [
     {name = "Han Lulong"}
 ]
-keywords = ["stata", "mcp", "ai", "codex"]
+keywords = ["stata", "cli", "ai", "codex"]
 
 dependencies = [
     "fastapi>=0.119.0",
