@@ -1,7 +1,7 @@
 ---
 name: stata-cli
 description: |
-  Use the local `stata-cli` command for Stata work on this machine. Trigger this skill when the user wants to run Stata code, execute a `.do` file, preview data from a loaded dataset or a `.dta` file, export a `.dta` or current dataset to CSV, or diagnose the local Stata CLI environment.
+  Use the local `stata-cli` command for Stata work on this machine. Trigger this skill when the user wants to bootstrap an AI-ready Stata workspace, run Stata code, execute a `.do` file, preview data from a loaded dataset or a `.dta` file, export a `.dta` or current dataset to CSV, or diagnose the local Stata CLI environment.
 ---
 
 # stata-cli
@@ -20,6 +20,7 @@ Use `stata-cli` as the default local entrypoint for Stata tasks in Codex.
 
 ```bash
 stata-cli doctor
+stata-cli init ./my-analysis
 stata-cli run --code 'display 1+1'
 stata-cli file /absolute/path/to/script.do
 stata-cli --json data view --input-dta /absolute/path/to/data.dta --max-rows 20
@@ -28,9 +29,10 @@ stata-cli data export-csv --input-dta /absolute/path/to/data.dta --output /absol
 
 ## Current capabilities
 
+- Bootstrap an AI-ready Stata workspace with `init`
 - Run inline Stata code with `run`
 - Execute `.do` files with `file`
-- Start a minimal interactive shell with `repl`
+- Start a human-oriented interactive shell with `repl`
 - Diagnose repo root, Python, and backend health with `doctor`
 - Preview dataset rows with `data view`
 - Convert a `.dta` file or current dataset to CSV with `data export-csv`
@@ -40,6 +42,9 @@ stata-cli data export-csv --input-dta /absolute/path/to/data.dta --output /absol
 - Do not assume cross-command persistent sessions. `stata-cli` is per-invocation.
 - Prefer absolute paths for `.do`, `.dta`, and CSV output paths.
 - Use `--json` when structured output is easier to consume.
+- For AI-driven analysis, prefer editing `do/analysis.do` and running `stata-cli file do/analysis.do --json`.
+- Use `data view` for small previews and keep `--max-rows` at `50` unless the user asks for more.
+- Prefer `repl` for quick human exploration; it does not require the AI workspace scaffold.
 
 ## Common failure reasons
 

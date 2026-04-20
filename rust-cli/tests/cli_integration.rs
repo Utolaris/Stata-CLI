@@ -72,12 +72,12 @@ fn file_command_returns_structured_python_artifacts() {
         .arg("--json")
         .arg("--session-id")
         .arg("rust-file")
+        .arg("file")
+        .arg(&do_file)
         .arg("--working-dir")
         .arg(temp.path())
         .arg("--timeout")
         .arg("45")
-        .arg("file")
-        .arg(&do_file)
         .output()
         .unwrap();
 
@@ -120,6 +120,64 @@ fn doctor_command_checks_python_backend_probe() {
     assert!(checks
         .iter()
         .any(|check| check["name"] == "backend_probe" && check["status"] == "ok"));
+}
+
+#[test]
+fn init_command_creates_agent_workspace_scaffold() {
+    let temp = tempdir().unwrap();
+    let target = temp.path().join("my-analysis");
+
+    let output = base_command()
+        .arg("--json")
+        .arg("init")
+        .arg(&target)
+        .output()
+        .unwrap();
+
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let json: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let resolved_target = std::fs::canonicalize(&target).unwrap();
+    assert_eq!(json["status"], "success");
+    assert_eq!(
+        json["target_dir"],
+        resolved_target.to_string_lossy().as_ref()
+    );
+    assert!(target.join("AGENTS.md").exists());
+    assert!(target.join("data").is_dir());
+    assert!(target.join("do").join("analysis.do").exists());
+    assert!(target.join("outputs").is_dir());
+    assert!(target.join("scripts").join("plot.py").exists());
+    assert!(target.join("stata-packages.md").exists());
+}
+
+#[test]
+fn init_command_errors_on_existing_scaffold_file() {
+    let temp = tempdir().unwrap();
+    let target = temp.path().join("my-analysis");
+    std::fs::create_dir_all(&target).unwrap();
+    std::fs::write(target.join("AGENTS.md"), "existing\n").unwrap();
+
+    let output = base_command()
+        .arg("--json")
+        .arg("init")
+        .arg(&target)
+        .output()
+        .unwrap();
+
+    assert!(!output.status.success());
+
+    let json: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let expected_conflict = std::fs::canonicalize(target.join("AGENTS.md")).unwrap();
+    assert_eq!(json["status"], "error");
+    assert_eq!(
+        json["conflicts"][0],
+        expected_conflict.to_string_lossy().as_ref()
+    );
 }
 
 #[test]
@@ -175,4 +233,24 @@ fn data_commands_round_trip_through_python_backend() {
         csv_path.to_string_lossy().as_ref()
     );
     assert!(csv_path.exists());
+}
+
+#[test]
+fn data_view_defaults_to_50_rows() {
+    let output = base_command()
+        .arg("--json")
+        .arg("data")
+        .arg("view")
+        .output()
+        .unwrap();
+
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let json: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(json["status"], "success");
+    assert_eq!(json["max_rows"], 50);
 }

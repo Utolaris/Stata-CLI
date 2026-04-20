@@ -151,6 +151,15 @@ def test_data_view_command_respects_small_max_rows(monkeypatch):
     assert result["max_rows"] == 5
 
 
+def test_build_parser_sets_agent_friendly_data_view_default():
+    parser = backend.build_parser()
+    args = parser.parse_args(["data", "view"])
+
+    assert args.command == "data"
+    assert args.data_command == "view"
+    assert args.max_rows == 50
+
+
 def test_data_export_csv_command_single_session(monkeypatch, tmp_path):
     captured = {}
 
@@ -180,3 +189,136 @@ def test_data_export_csv_command_single_session(monkeypatch, tmp_path):
     assert result["output_csv"] == str(output_csv)
     assert 'use "' in captured["selection"]
     assert 'export delimited using "' in captured["selection"]
+
+
+def test_init_workspace_command_creates_expected_scaffold(tmp_path):
+    target = tmp_path / "analysis"
+
+    result = backend.init_workspace_command(str(target))
+
+    assert result["status"] == "success"
+    assert result["target_dir"] == str(target.resolve())
+    assert (target / "AGENTS.md").exists()
+    assert (target / "data").is_dir()
+    assert (target / "do" / "analysis.do").exists()
+    assert (target / "outputs").is_dir()
+    assert (target / "scripts" / "plot.py").exists()
+    assert (target / "stata-packages.md").exists()
+
+
+def test_init_workspace_command_writes_required_template_content(tmp_path):
+    target = tmp_path / "analysis"
+    backend.init_workspace_command(str(target))
+
+    agents_text = (target / "AGENTS.md").read_text(encoding="utf-8")
+    assert "stata-cli file do/analysis.do --json" in agents_text
+    assert "outputs/result.txt" in agents_text
+    assert "which <command>" in agents_text
+
+    analysis_text = (target / "do" / "analysis.do").read_text(encoding="utf-8")
+    assert "capture log close" in analysis_text
+    assert "set more off" in analysis_text
+    assert 'log using "outputs/result.txt", text replace' in analysis_text
+    assert "display \"Run started:" in analysis_text
+    assert "display \"Working directory:" in analysis_text
+    assert "describe" in analysis_text
+    assert "summarize" in analysis_text
+    assert "log close" in analysis_text
+
+    plot_text = (target / "scripts" / "plot.py").read_text(encoding="utf-8")
+    assert "import matplotlib.pyplot as plt" in plot_text
+    assert "import pandas as pd" in plot_text
+    assert "import seaborn as sns" in plot_text
+    assert 'OUTPUTS_DIR / "plot.png"' in plot_text
+
+    packages_text = (target / "stata-packages.md").read_text(encoding="utf-8")
+    assert "which <command>" in packages_text
+    assert "`estout` / `esttab`" in packages_text
+    assert "`reghdfe`" in packages_text
+    assert "ask the user before installing anything" in packages_text
+
+
+def test_init_workspace_command_errors_on_existing_scaffold_file(tmp_path):
+    target = tmp_path / "analysis"
+    target.mkdir()
+    existing = target / "AGENTS.md"
+    existing.write_text("existing\n", encoding="utf-8")
+
+    result = backend.init_workspace_command(str(target))
+
+    assert result["status"] == "error"
+    assert "Refusing to overwrite" in result["message"]
+    assert result["conflicts"] == [str(existing.resolve())]
+    assert existing.read_text(encoding="utf-8") == "existing\n"
+
+
+def test_lex_stata_line_highlights_basic_tokens():
+    fragments = backend._lex_stata_line('regress y x1 if x1 >= 1 // note')
+
+    assert ("class:keyword", "regress") in fragments
+    assert ("class:keyword", "if") in fragments
+    assert ("class:operator", ">=") in fragments
+    assert ("class:number", "1") in fragments
+    assert ("class:comment", "// note") in fragments
+
+
+def test_print_repl_result_omits_graph_and_log_metadata(capsys):
+    result = backend.ExecutionResult(
+        status="success",
+        output="regression output",
+        session_id="default",
+        log_file="/tmp/example.log",
+        graphs=[backend.GraphArtifact(name="g1", path="/tmp/g1.png", format="png")],
+        error=None,
+    )
+
+    backend._print_repl_result(result)
+
+    captured = capsys.readouterr()
+    assert captured.out == "regression output\n"
+    assert captured.err == ""
+
+
+def test_sanitize_repl_output_removes_internal_wrapper_noise():
+    raw_output = """-------------------------------------------------------------------------------
+      name:  <unnamed>
+       log:  /tmp/stata.log
+> _1776689348098.log
+  log type:  text
+ opened on:  20 Apr 2026, 20:40:50
+
+. quietly set seed 917286971
+
+. display 2+3
+5
+
+. capture log close _all
+"""
+
+    cleaned = backend._sanitize_repl_output(raw_output)
+
+    assert "quietly set seed" not in cleaned
+    assert "capture log close _all" not in cleaned
+    assert "opened on:" not in cleaned
+    assert "> _1776689348098.log" not in cleaned
+    assert ". display 2+3" in cleaned
+    assert "5" in cleaned
+
+
+def test_print_repl_result_applies_repl_sanitizer(capsys):
+    result = backend.ExecutionResult(
+        status="success",
+        output=". quietly set seed 1\n. display 2+3\n5\n. capture log close _all\n",
+        session_id="default",
+        log_file=None,
+        graphs=[],
+        error=None,
+    )
+
+    backend._print_repl_result(result)
+
+    captured = capsys.readouterr()
+    assert "quietly set seed" not in captured.out
+    assert "capture log close _all" not in captured.out
+    assert ". display 2+3" in captured.out
+    assert "5" in captured.out

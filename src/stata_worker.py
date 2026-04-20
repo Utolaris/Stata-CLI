@@ -36,6 +36,8 @@ import shutil
 from typing import Optional, Dict, Any, Tuple
 from enum import Enum
 
+REPL_MODE = os.getenv("STATA_CLI_REPL_MODE", "").strip().lower() in {"1", "true", "yes", "on"}
+
 
 def deduplicate_break_messages(output: str) -> str:
     """Remove duplicate --Break-- messages from Stata output."""
@@ -311,7 +313,8 @@ def worker_process(
     file_handler.setLevel(logging.DEBUG)
     file_handler.setFormatter(logging.Formatter(f'%(asctime)s - worker-{worker_id} - %(levelname)s - %(message)s'))
     worker_logger.addHandler(file_handler)
-    worker_logger.info(f"Worker {worker_id} started, logging to {worker_log_file}")
+    if not REPL_MODE:
+        worker_logger.info(f"Worker {worker_id} started, logging to {worker_log_file}")
 
     # Also set the root logger to use this for convenience in other functions
     logging.root.handlers = [file_handler]

@@ -4,7 +4,7 @@
 
 `stata-cli` is a local command-line tool for running Stata code, `.do` files, and `.dta` data through the Python/PyStata backend in this repository.
 
-This repo is designed so an AI agent can quickly understand the project, install the right dependencies, and run Stata locally without needing VS Code.
+This repo is designed so an AI agent can quickly understand the project, install the right dependencies, bootstrap an analysis workspace, and run Stata locally without needing VS Code.
 
 ## Project Structure
 
@@ -89,6 +89,16 @@ stata-cli doctor
 
 ## Capabilities
 
+### Initialize an AI-ready workspace
+
+```bash
+stata-cli init ./my-analysis
+```
+
+- Create an agent-oriented Stata working directory
+- Generate `AGENTS.md`, `data/`, `do/`, `outputs/`, `scripts/`, `do/analysis.do`, `scripts/plot.py`, and `stata-packages.md`
+- Fail if scaffold files already exist instead of overwriting them silently
+
 ### Run Stata code
 
 ```bash
@@ -114,7 +124,10 @@ stata-cli file /absolute/path/to/script.do
 stata-cli repl
 ```
 
-- Run one Stata command at a time in a simple interactive shell
+- Run one Stata command at a time in a human-oriented interactive shell
+- Prefer this for quick manual exploration instead of AI workflows
+- Can run from any directory when `stata-cli-backend` is available on `PATH`, or when you pass `--python` to a Python 3.11 environment with the backend installed
+- Uses a Stata-style prompt, syntax highlighting, and filtered output without extra CLI log noise
 
 ### Diagnose the local environment
 
@@ -133,12 +146,33 @@ stata-cli --json doctor
 ```bash
 stata-cli --json data view --input-dta /absolute/path/to/data.dta --max-rows 20
 stata-cli --json data view --if-condition 'iq > 110' --max-rows 10
+stata-cli --json data view
 ```
 
 - Preview rows from the current dataset
 - Preview rows directly from a `.dta` file with `--input-dta`
 - Filter with `--if-condition`
 - Limit rows with `--max-rows`
+- Default to `50` rows so AI agents do not dump large tables into chat context
+
+## AI-first workflow
+
+For agent-driven work, start with:
+
+```bash
+stata-cli init ./my-analysis
+```
+
+Then keep the working pattern simple:
+
+- Put substantial Stata logic in `do/analysis.do`
+- Include `capture log close` and `set more off`
+- Write full text output to `outputs/result.txt`
+- Run the analysis with `stata-cli file do/analysis.do --json`
+- Use the JSON response only to inspect `status`, `error`, `log_file`, and `graphs`
+- Use `data view` for schema checks and small previews, not full table dumps
+- Use Python scripts under `scripts/` for final charts saved into `outputs/`
+- Run `which <command>` before using third-party Stata packages, and ask before installing anything
 
 ### Export data to CSV
 

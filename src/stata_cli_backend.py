@@ -14,18 +14,196 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import logging
 import os
 import sys
 import tempfile
+import re
 from pathlib import Path
 from typing import Optional
+
+if os.getenv("STATA_CLI_REPL_MODE", "").strip().lower() in {"1", "true", "yes", "on"}:
+    logging.basicConfig(level=logging.ERROR, force=True)
 
 import stata_mcp
 import stata_mcp_server as legacy
 from api_models import ExecutionResult, GraphArtifact
+from prompt_toolkit import PromptSession
+from prompt_toolkit.history import FileHistory
+from prompt_toolkit.lexers import Lexer
+from prompt_toolkit.styles import Style
 from session_manager import SessionManager
 
 TEST_MODE_ENV = "STATA_CLI_BACKEND_TEST_MODE"
+DEFAULT_DATA_VIEW_MAX_ROWS = 50
+
+INIT_DIRS = ["data", "do", "outputs", "scripts"]
+
+INIT_FILES = {
+    "AGENTS.md": """# AGENTS.md
+
+- Prefer writing `.do` files instead of putting long Stata programs directly into the CLI.
+- Run analysis with `stata-cli file do/analysis.do --json`.
+- Every `.do` file must include `set more off`.
+- Every `.do` file must include `capture log close`.
+- Write full text results to `outputs/result.txt`.
+- Use CLI JSON only to inspect `status`, `error`, `log_file`, and `graphs`.
+- If a run fails, read the JSON error plus `outputs/result.txt` or the log file, edit the `.do` file, and retry.
+- Use `data view` only for variable names and small previews. Keep `max_rows` at 50 or less unless the user asks for more.
+- Do not dump large datasets into chat context.
+- Use Stata by default for cleaning, regression, and statistical tests.
+- Use Python by default for final charts and save them into `outputs/`.
+- Before using any third-party Stata command, run `which <command>`.
+- Do not install third-party Stata packages unless the user explicitly approves it.
+""",
+    "do/analysis.do": """capture log close
+clear all
+set more off
+
+cap mkdir "outputs"
+log using "outputs/result.txt", text replace
+
+display "Run started: $S_DATE $S_TIME"
+display "Working directory: `c(pwd)'"
+
+* Load data here
+* use "data/example.dta", clear
+
+* Inspect the dataset
+describe
+summarize
+
+* Main analysis
+* regress y x1 x2
+
+log close
+""",
+    "scripts/plot.py": """from pathlib import Path
+
+import matplotlib.pyplot as plt
+import pandas as pd
+import seaborn as sns
+
+
+BASE_DIR = Path(__file__).resolve().parents[1]
+OUTPUTS_DIR = BASE_DIR / "outputs"
+DATA_DIR = BASE_DIR / "data"
+
+
+def main() -> None:
+    source = OUTPUTS_DIR / "analysis.csv"
+    if not source.exists():
+        source = DATA_DIR / "analysis.csv"
+    if not source.exists():
+        raise FileNotFoundError(
+            "Add a CSV file at outputs/analysis.csv or data/analysis.csv before plotting."
+        )
+
+    OUTPUTS_DIR.mkdir(parents=True, exist_ok=True)
+
+    df = pd.read_csv(source)
+    numeric_columns = df.select_dtypes(include="number").columns.tolist()
+    if len(numeric_columns) < 2:
+        raise ValueError("Need at least two numeric columns to build the template plot.")
+
+    x_col, y_col = numeric_columns[:2]
+
+    sns.set_theme(style="whitegrid")
+    fig, ax = plt.subplots(figsize=(8, 5))
+    sns.lineplot(data=df, x=x_col, y=y_col, marker="o", ax=ax)
+    ax.set_title("Analysis Plot")
+    ax.set_xlabel(x_col)
+    ax.set_ylabel(y_col)
+
+    fig.tight_layout()
+    fig.savefig(OUTPUTS_DIR / "plot.png", dpi=200)
+
+
+if __name__ == "__main__":
+    main()
+""",
+    "stata-packages.md": """# Stata packages to consider
+
+Check availability first with `which <command>`. If a command is missing, ask the user before installing anything.
+
+- `estout` / `esttab`
+- `outreg2`
+- `reghdfe`
+- `winsor2`
+- `coefplot`
+""",
+}
+
+REPL_STYLE = Style.from_dict(
+    {
+        "prompt": "ansicyan bold",
+        "keyword": "ansimagenta bold",
+        "string": "ansigreen",
+        "comment": "ansibrightblack italic",
+        "macro": "ansiyellow",
+        "number": "ansiblue",
+        "operator": "ansired",
+        "text": "",
+    }
+)
+
+REPL_KEYWORDS = {
+    "append",
+    "assert",
+    "bysort",
+    "capture",
+    "cd",
+    "clear",
+    "count",
+    "describe",
+    "display",
+    "do",
+    "drop",
+    "egen",
+    "export",
+    "forvalues",
+    "foreach",
+    "generate",
+    "graph",
+    "if",
+    "in",
+    "keep",
+    "list",
+    "local",
+    "log",
+    "merge",
+    "quietly",
+    "regress",
+    "replace",
+    "save",
+    "scalar",
+    "set",
+    "sort",
+    "summarize",
+    "tabulate",
+    "twoway",
+    "use",
+    "which",
+}
+
+REPL_OPERATORS = {"=", "==", ">=", "<=", ">", "<", "+", "-", "*", "/", "(", ")", ",", ":"}
+REPL_TOKEN_PATTERN = re.compile(
+    r'(\s+|//.*|/\*.*?\*/|"(?:[^"\\]|\\.)*"|`[^`]*\'|\$[A-Za-z_][A-Za-z0-9_]*|>=|<=|==|\b\d+(?:\.\d+)?\b|\b[A-Za-z_][A-Za-z0-9_]*\b|.)'
+)
+REPL_LOG_INFO_PATTERN = re.compile(
+    r'^\s*(name:|log:|log type:|opened on:|closed on:)\s*',
+    re.IGNORECASE,
+)
+
+
+class StataReplLexer(Lexer):
+    def lex_document(self, document):
+        lines = document.lines
+
+        def get_line(lineno):
+            return _lex_stata_line(lines[lineno])
+
+        return get_line
 
 
 def _emit_json(result: ExecutionResult) -> int:
@@ -82,6 +260,9 @@ def _mock_result_from_args(args: argparse.Namespace) -> object:
             error=None,
         )
 
+    if args.command == "init":
+        return init_workspace_command(args.target_dir)
+
     if args.command == "data":
         if args.data_command == "view":
             return {
@@ -127,6 +308,145 @@ def _print_human_payload(payload: object) -> None:
 
 def _session_error(message: str) -> dict:
     return {"status": "error", "message": message}
+
+
+def _repl_history_path() -> Path:
+    if os.name == "nt" and os.getenv("APPDATA"):
+        base = Path(os.environ["APPDATA"]) / "stata-cli"
+    else:
+        base = Path.home() / ".stata-cli"
+    base.mkdir(parents=True, exist_ok=True)
+    return base / "repl_history.txt"
+
+
+def _lex_stata_line(line: str) -> list[tuple[str, str]]:
+    stripped = line.lstrip()
+    if stripped.startswith("*"):
+        return [("class:comment", line)]
+
+    fragments: list[tuple[str, str]] = []
+    for token in REPL_TOKEN_PATTERN.findall(line):
+        lower = token.lower()
+        if not token:
+            continue
+        if token.isspace():
+            fragments.append(("class:text", token))
+        elif token.startswith("//") or (token.startswith("/*") and token.endswith("*/")):
+            fragments.append(("class:comment", token))
+        elif token.startswith('"') and token.endswith('"'):
+            fragments.append(("class:string", token))
+        elif token.startswith("`") or token.startswith("$"):
+            fragments.append(("class:macro", token))
+        elif lower in REPL_KEYWORDS:
+            fragments.append(("class:keyword", token))
+        elif token in REPL_OPERATORS:
+            fragments.append(("class:operator", token))
+        elif token.replace(".", "", 1).isdigit():
+            fragments.append(("class:number", token))
+        else:
+            fragments.append(("class:text", token))
+    return fragments
+
+
+def _create_repl_session() -> PromptSession:
+    return PromptSession(
+        lexer=StataReplLexer(),
+        style=REPL_STYLE,
+        history=FileHistory(str(_repl_history_path())),
+    )
+
+
+def _sanitize_repl_output(text: str) -> str:
+    if not text:
+        return ""
+
+    lines = text.replace("\r\n", "\n").replace("\r", "\n").split("\n")
+    cleaned: list[str] = []
+    pending_separator = False
+
+    for line in lines:
+        stripped = line.strip()
+        if stripped == "-------------------------------------------------------------------------------":
+            pending_separator = True
+            continue
+        if stripped.startswith("> _") and stripped.endswith(".log"):
+            pending_separator = False
+            continue
+        if REPL_LOG_INFO_PATTERN.match(line):
+            pending_separator = False
+            continue
+        if stripped.startswith(". quietly set seed "):
+            pending_separator = False
+            continue
+        if stripped.startswith(". capture log close"):
+            pending_separator = False
+            continue
+        if stripped.startswith("> ") and cleaned and cleaned[-1].startswith(". "):
+            cleaned[-1] = f"{cleaned[-1]} {stripped[2:].lstrip()}"
+            continue
+        if pending_separator and cleaned and stripped:
+            cleaned.append("")
+            pending_separator = False
+        elif pending_separator:
+            pending_separator = False
+
+        cleaned.append(line)
+
+    while cleaned and not cleaned[0].strip():
+        cleaned.pop(0)
+    while cleaned and not cleaned[-1].strip():
+        cleaned.pop()
+
+    collapsed: list[str] = []
+    previous_blank = False
+    for line in cleaned:
+        is_blank = not line.strip()
+        if is_blank and previous_blank:
+            continue
+        collapsed.append(line)
+        previous_blank = is_blank
+
+    return "\n".join(collapsed)
+
+
+def _print_repl_result(result: ExecutionResult) -> None:
+    text = _sanitize_repl_output(result.output or result.error or "")
+    if text:
+        print(text, end="" if text.endswith("\n") else "\n")
+
+
+def init_workspace_command(target_dir: str) -> dict:
+    root = Path(target_dir).expanduser().resolve()
+    planned_dirs = [root / relative for relative in INIT_DIRS]
+    planned_files = [root / relative for relative in INIT_FILES]
+    conflicts = [str(path) for path in planned_files if path.exists()]
+    if conflicts:
+        return {
+            "status": "error",
+            "message": "Refusing to overwrite existing scaffold files.",
+            "target_dir": str(root),
+            "conflicts": conflicts,
+        }
+
+    root.mkdir(parents=True, exist_ok=True)
+    created: list[str] = []
+
+    for directory in planned_dirs:
+        directory.mkdir(parents=True, exist_ok=True)
+        created.append(str(directory))
+
+    for relative_path, content in INIT_FILES.items():
+        path = root / relative_path
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content, encoding="utf-8")
+        created.append(str(path))
+
+    return {
+        "status": "success",
+        "target_dir": str(root),
+        "created": created,
+        "message": f"Initialized AI-ready Stata workspace at {root}",
+    }
 
 
 def data_view_command(
@@ -369,12 +689,11 @@ def _print_human_result(result: ExecutionResult) -> None:
 
 
 def repl_command(session_id: Optional[str], working_dir: Optional[str]) -> int:
-    print("stata-cli repl")
-    print("Type Stata code. Use :exit or :quit to leave.")
+    session = _create_repl_session()
 
     while True:
         try:
-            line = input("stata> ")
+            line = session.prompt([("class:prompt", ". ")])
         except EOFError:
             print()
             return 0
@@ -388,8 +707,26 @@ def repl_command(session_id: Optional[str], working_dir: Optional[str]) -> int:
         if stripped in {":exit", ":quit"}:
             return 0
 
-        result = run_selection_command(stripped, session_id, working_dir)
-        _print_human_result(result)
+        buffer = [line]
+        while stripped.endswith("///"):
+            try:
+                continuation = session.prompt([("class:prompt", "> ")])
+            except EOFError:
+                print()
+                return 0
+            except KeyboardInterrupt:
+                print()
+                buffer = []
+                break
+
+            buffer.append(continuation)
+            stripped = continuation.strip()
+
+        if not buffer:
+            continue
+
+        result = run_selection_command("\n".join(buffer), session_id, working_dir)
+        _print_repl_result(result)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -425,13 +762,16 @@ def build_parser() -> argparse.ArgumentParser:
     repl_parser.add_argument("--session-id")
     repl_parser.add_argument("--working-dir")
 
+    init_parser = subparsers.add_parser("init", help="Create an AI-ready Stata workspace scaffold")
+    init_parser.add_argument("target_dir")
+
     data_parser = subparsers.add_parser("data", help="Inspect the current dataset or export it")
     data_subparsers = data_parser.add_subparsers(dest="data_command", required=True)
 
     view_parser = data_subparsers.add_parser("view", help="View current data as structured rows")
     view_parser.add_argument("--session-id")
     view_parser.add_argument("--if-condition")
-    view_parser.add_argument("--max-rows", type=int, default=1000)
+    view_parser.add_argument("--max-rows", type=int, default=DEFAULT_DATA_VIEW_MAX_ROWS)
     view_parser.add_argument("--input-dta")
 
     export_parser = data_subparsers.add_parser("export-csv", help="Export the current dataset or a .dta file to CSV")
@@ -450,8 +790,6 @@ def main(argv: Optional[list[str]] = None) -> int:
 
     if _is_test_mode():
         if args.command == "repl":
-            print("stata-cli repl")
-            print("Type Stata code. Use :exit or :quit to leave.")
             return 0
         result = _mock_result_from_args(args)
         if args.json:
@@ -483,6 +821,13 @@ def main(argv: Optional[list[str]] = None) -> int:
     config = stata_mcp.parse_runtime_config(config_args)
 
     try:
+        if args.command == "init":
+            result = init_workspace_command(args.target_dir)
+            if args.json:
+                return _emit_json_payload(result)
+            _print_human_payload(result)
+            return 0 if result.get("status") != "error" else 1
+
         stata_mcp.initialize_runtime(config)
 
         if args.command == "run":

@@ -58,6 +58,15 @@ enum Commands {
     },
     File {
         path: PathBuf,
+        #[arg(long)]
+        timeout: Option<u32>,
+        #[arg(long)]
+        session_id: Option<String>,
+        #[arg(long)]
+        working_dir: Option<PathBuf>,
+    },
+    Init {
+        target_dir: PathBuf,
     },
     Repl,
     Doctor,
@@ -74,7 +83,7 @@ enum DataCommands {
         session_id: Option<String>,
         #[arg(long)]
         if_condition: Option<String>,
-        #[arg(long, default_value_t = 1000)]
+        #[arg(long, default_value_t = 50)]
         max_rows: u32,
         #[arg(long)]
         input_dta: Option<PathBuf>,
@@ -158,12 +167,17 @@ struct ResolvedStataPath {
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
-    let repo_root = resolve_repo_root()?;
     let resolved_stata_path = resolve_effective_stata_path(&cli)?;
     let mut effective_cli = cli.clone();
     if let Some(path) = &resolved_stata_path.path {
         effective_cli.stata_path = Some(path.to_string_lossy().into_owned());
     }
+
+    if matches!(effective_cli.command, Commands::Repl) {
+        return repl_command(&effective_cli);
+    }
+
+    let repo_root = resolve_repo_root()?;
 
     match &effective_cli.command {
         Commands::Doctor => doctor_command(&effective_cli, &repo_root, &resolved_stata_path),
@@ -185,27 +199,46 @@ fn main() -> Result<()> {
             render_result(&result, effective_cli.json, effective_cli.quiet)?;
             Ok(())
         }
-        Commands::File { path } => {
+        Commands::File {
+            path,
+            timeout,
+            session_id,
+            working_dir,
+        } => {
             let python = resolve_python(effective_cli.python.as_deref(), &repo_root.path)?;
+            let mut file_cli = effective_cli.clone();
+            if session_id.is_some() {
+                file_cli.session_id = session_id.clone();
+            }
+            if working_dir.is_some() {
+                file_cli.working_dir = working_dir.clone();
+            }
+            if timeout.is_some() {
+                file_cli.timeout = *timeout;
+            }
             let result = invoke_backend(
                 &python.path,
                 &repo_root.path,
-                &effective_cli,
+                &file_cli,
                 "file",
                 vec![path.as_os_str().to_os_string()],
             )?;
             persist_stata_path_if_needed(&resolved_stata_path, &result)?;
-            render_result(&result, effective_cli.json, effective_cli.quiet)?;
+            render_result(&result, file_cli.json, file_cli.quiet)?;
             Ok(())
         }
-        Commands::Repl => {
+        Commands::Init { target_dir } => {
             let python = resolve_python(effective_cli.python.as_deref(), &repo_root.path)?;
-            let status = spawn_repl(&python.path, &repo_root.path, &effective_cli)?;
-            if !status.success() {
-                bail!("stata-cli repl exited with status {}", status);
-            }
-            Ok(())
+            let payload = invoke_backend_json(
+                &python.path,
+                &repo_root.path,
+                &effective_cli,
+                "init",
+                vec![target_dir.as_os_str().to_os_string()],
+            )?;
+            render_json_payload(&payload, effective_cli.json)
         }
+        Commands::Repl => unreachable!("repl is handled before project-root resolution"),
         Commands::Data { command } => {
             let python = resolve_python(effective_cli.python.as_deref(), &repo_root.path)?;
             let (backend_command, backend_args) = data_backend_invocation(command);
@@ -654,9 +687,8 @@ fn persist_stata_path_if_needed_json(
     Ok(())
 }
 
-fn base_backend_args(repo_root: &Path, cli: &Cli, json: bool) -> Vec<OsString> {
-    let mut args = vec![OsString::from(backend_script(repo_root))];
-
+fn base_backend_cli_args(cli: &Cli, json: bool) -> Vec<OsString> {
+    let mut args = Vec::new();
     if let Some(path) = &cli.stata_path {
         args.push(OsString::from("--stata-path"));
         args.push(OsString::from(path));
@@ -692,6 +724,12 @@ fn base_backend_args(repo_root: &Path, cli: &Cli, json: bool) -> Vec<OsString> {
     if json {
         args.push(OsString::from("--json"));
     }
+    args
+}
+
+fn base_backend_args(repo_root: &Path, cli: &Cli, json: bool) -> Vec<OsString> {
+    let mut args = vec![backend_script(repo_root).into_os_string()];
+    args.extend(base_backend_cli_args(cli, json));
     args
 }
 
@@ -797,7 +835,9 @@ fn invoke_backend_json(
     let mut args = base_backend_args(repo_root, cli, true);
     args.push(OsString::from(command));
     args.append(&mut command_args);
-    args.extend(session_args(cli));
+    if command != "init" {
+        args.extend(session_args(cli));
+    }
 
     if let Commands::File { .. } = cli.command {
         if let Some(timeout) = cli.timeout {
@@ -895,6 +935,36 @@ fn render_json_payload(payload: &Value, emit_json: bool) -> Result<()> {
     bail!("{message}")
 }
 
+fn repl_command(cli: &Cli) -> Result<()> {
+    let status = if let Some(python) = cli.python.as_deref() {
+        spawn_repl_via_module(python, cli)?
+    } else if backend_command_available("stata-cli-backend") {
+        spawn_repl_via_backend_command("stata-cli-backend", cli)?
+    } else if let Ok(repo_root) = resolve_repo_root() {
+        let python = resolve_python(cli.python.as_deref(), &repo_root.path)?;
+        spawn_repl(&python.path, &repo_root.path, cli)?
+    } else {
+        bail!(
+            "Could not start repl from the current directory. Activate an environment that provides `stata-cli-backend`, pass `--python` to a Python 3.11 interpreter with `stata_cli_backend` installed, or configure {}.",
+            PROJECT_ROOT_ENV
+        );
+    };
+
+    if !status.success() {
+        bail!("stata-cli repl exited with status {}", status);
+    }
+    Ok(())
+}
+
+fn backend_command_available(command: &str) -> bool {
+    Command::new(command)
+        .arg("--help")
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .is_ok()
+}
+
 fn spawn_repl(python: &Path, repo_root: &Path, cli: &Cli) -> Result<ExitStatus> {
     let backend = backend_script(repo_root);
     if !backend.exists() {
@@ -908,11 +978,43 @@ fn spawn_repl(python: &Path, repo_root: &Path, cli: &Cli) -> Result<ExitStatus> 
     Command::new(python)
         .args(&args)
         .current_dir(repo_root)
+        .env("STATA_CLI_REPL_MODE", "1")
         .stdin(Stdio::inherit())
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit())
         .status()
         .with_context(|| "Failed to launch interactive backend".to_string())
+}
+
+fn spawn_repl_via_module(python: &Path, cli: &Cli) -> Result<ExitStatus> {
+    let mut args = vec![OsString::from("-m"), OsString::from("stata_cli_backend")];
+    args.extend(base_backend_cli_args(cli, false));
+    args.push(OsString::from("repl"));
+    args.extend(session_args(cli));
+
+    Command::new(python)
+        .args(&args)
+        .env("STATA_CLI_REPL_MODE", "1")
+        .stdin(Stdio::inherit())
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit())
+        .status()
+        .with_context(|| format!("Failed to launch repl with {}", python.display()))
+}
+
+fn spawn_repl_via_backend_command(command: &str, cli: &Cli) -> Result<ExitStatus> {
+    let mut args = base_backend_cli_args(cli, false);
+    args.push(OsString::from("repl"));
+    args.extend(session_args(cli));
+
+    Command::new(command)
+        .args(&args)
+        .env("STATA_CLI_REPL_MODE", "1")
+        .stdin(Stdio::inherit())
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit())
+        .status()
+        .with_context(|| format!("Failed to launch repl with `{command}`"))
 }
 
 fn doctor_command(
@@ -1121,6 +1223,15 @@ mod tests {
     }
 
     #[test]
+    fn parse_init_command() {
+        let cli = Cli::parse_from(["stata-cli", "init", "./my-analysis"]);
+        match cli.command {
+            Commands::Init { target_dir } => assert_eq!(target_dir, PathBuf::from("./my-analysis")),
+            _ => panic!("expected init command"),
+        }
+    }
+
+    #[test]
     fn parse_data_export_command() {
         let temp = std::env::temp_dir();
         let output_path = temp.join("out.csv");
@@ -1160,20 +1271,58 @@ mod tests {
             "stata-cli",
             "--stata-path",
             "/Applications/Stata",
-            "--timeout",
-            "60",
             "file",
             "tests/fixtures/test_stata.do",
+            "--timeout",
+            "60",
+            "--working-dir",
+            "/tmp",
         ]);
 
         assert_eq!(cli.stata_path.as_deref(), Some("/Applications/Stata"));
-        assert_eq!(cli.timeout, Some(60));
         match cli.command {
-            Commands::File { path } => {
-                assert_eq!(path, PathBuf::from("tests/fixtures/test_stata.do"))
+            Commands::File {
+                path,
+                timeout,
+                working_dir,
+                ..
+            } => {
+                assert_eq!(path, PathBuf::from("tests/fixtures/test_stata.do"));
+                assert_eq!(timeout, Some(60));
+                assert_eq!(working_dir, Some(PathBuf::from("/tmp")));
             }
             _ => panic!("expected file command"),
         }
+    }
+
+    #[test]
+    fn parse_data_view_uses_agent_friendly_default() {
+        let cli = Cli::parse_from(["stata-cli", "data", "view"]);
+        match cli.command {
+            Commands::Data {
+                command: DataCommands::View { max_rows, .. },
+            } => assert_eq!(max_rows, 50),
+            _ => panic!("expected data view command"),
+        }
+    }
+
+    #[test]
+    fn base_backend_cli_args_excludes_backend_script_path() {
+        let cli = Cli::parse_from([
+            "stata-cli",
+            "--stata-path",
+            "/Applications/Stata",
+            "--log-level",
+            "INFO",
+            "doctor",
+        ]);
+
+        let args = base_backend_cli_args(&cli, true);
+        assert!(args.iter().any(|arg| arg == "--stata-path"));
+        assert!(args.iter().any(|arg| arg == "--json"));
+        assert!(!args
+            .iter()
+            .any(|arg| arg.to_string_lossy().contains("stata_cli_backend.py")));
     }
 
     #[test]

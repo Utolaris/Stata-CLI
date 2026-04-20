@@ -18,6 +18,7 @@ dependencies = [
     "pydantic>=2.11.0",
     "pandas>=2.0.0",
     "httpx>=0.28.0",
+    "prompt-toolkit>=3.0.0",
     "tomli>=2.0.0; python_version < '3.11'",
 ]
 
