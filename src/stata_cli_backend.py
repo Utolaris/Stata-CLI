@@ -16,6 +16,7 @@ import asyncio
 import json
 import os
 import sys
+import tempfile
 from pathlib import Path
 from typing import Optional
 
@@ -65,15 +66,16 @@ def _mock_result_from_args(args: argparse.Namespace) -> object:
 
     if args.command == "file":
         file_name = os.path.basename(args.file_path)
+        temp_dir = tempfile.gettempdir()
         return ExecutionResult(
             status="success",
             output=f"mock-file file={file_name} working_dir={working_dir} timeout={args.timeout}",
             session_id=session_id,
-            log_file=f"/tmp/{os.path.splitext(file_name)[0]}.log",
+            log_file=os.path.join(temp_dir, f"{os.path.splitext(file_name)[0]}.log"),
             graphs=[
                 GraphArtifact(
                     name="mock_graph",
-                    path=f"/tmp/{os.path.splitext(file_name)[0]}.png",
+                    path=os.path.join(temp_dir, f"{os.path.splitext(file_name)[0]}.png"),
                     format="png",
                 )
             ],

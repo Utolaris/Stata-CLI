@@ -4,13 +4,15 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::ffi::OsString;
 use std::fs;
+use std::io::{self, IsTerminal, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitStatus, Stdio};
 
 const COMPILED_REPO_ROOT: &str = env!("STATACLI_REPO_ROOT");
 const PROJECT_ROOT_ENV: &str = "STATA_CLI_PROJECT_ROOT";
+const STATA_PATH_ENV: &str = "STATA_PATH";
 
-#[derive(Parser, Debug)]
+#[derive(Parser, Debug, Clone)]
 #[command(name = "stata-cli")]
 #[command(about = "A local Rust CLI wrapper for the Python/PyStata backend")]
 struct Cli {
@@ -48,7 +50,7 @@ struct Cli {
     command: Commands,
 }
 
-#[derive(Subcommand, Debug)]
+#[derive(Subcommand, Debug, Clone)]
 enum Commands {
     Run {
         #[arg(long)]
@@ -65,7 +67,7 @@ enum Commands {
     },
 }
 
-#[derive(Subcommand, Debug)]
+#[derive(Subcommand, Debug, Clone)]
 enum DataCommands {
     View {
         #[arg(long)]
@@ -106,9 +108,10 @@ struct ExecutionResult {
     error: Option<String>,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize, Default, Clone)]
 struct CliConfig {
     project_root: Option<PathBuf>,
+    stata_path: Option<PathBuf>,
 }
 
 #[derive(Debug, Clone)]
@@ -137,64 +140,104 @@ struct DoctorReport {
     checks: Vec<DoctorCheck>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum StataPathSource {
+    CliFlag,
+    Environment,
+    Config,
+    Default,
+    Prompt,
+}
+
+#[derive(Debug, Clone)]
+struct ResolvedStataPath {
+    path: Option<PathBuf>,
+    source: Option<StataPathSource>,
+    save_to_config: bool,
+}
+
 fn main() -> Result<()> {
     let cli = Cli::parse();
     let repo_root = resolve_repo_root()?;
+    let resolved_stata_path = resolve_effective_stata_path(&cli)?;
+    let mut effective_cli = cli.clone();
+    if let Some(path) = &resolved_stata_path.path {
+        effective_cli.stata_path = Some(path.to_string_lossy().into_owned());
+    }
 
-    match &cli.command {
-        Commands::Doctor => doctor_command(&cli, &repo_root),
+    match &effective_cli.command {
+        Commands::Doctor => doctor_command(&effective_cli, &repo_root, &resolved_stata_path),
         Commands::Run { code } => {
-            let python = resolve_python(cli.python.as_deref(), &repo_root.path)?;
+            let python = resolve_python(effective_cli.python.as_deref(), &repo_root.path)?;
             let mut command_args = vec![OsString::from("--code"), OsString::from(code)];
-            if let Some(timeout) = cli.timeout {
+            if let Some(timeout) = effective_cli.timeout {
                 command_args.push(OsString::from("--timeout"));
                 command_args.push(OsString::from(timeout.to_string()));
             }
-            let result = invoke_backend(&python.path, &repo_root.path, &cli, "run", command_args)?;
-            render_result(&result, cli.json, cli.quiet)?;
-            Ok(())
-        }
-        Commands::File { path } => {
-            let python = resolve_python(cli.python.as_deref(), &repo_root.path)?;
             let result = invoke_backend(
                 &python.path,
                 &repo_root.path,
-                &cli,
+                &effective_cli,
+                "run",
+                command_args,
+            )?;
+            persist_stata_path_if_needed(&resolved_stata_path, &result)?;
+            render_result(&result, effective_cli.json, effective_cli.quiet)?;
+            Ok(())
+        }
+        Commands::File { path } => {
+            let python = resolve_python(effective_cli.python.as_deref(), &repo_root.path)?;
+            let result = invoke_backend(
+                &python.path,
+                &repo_root.path,
+                &effective_cli,
                 "file",
                 vec![path.as_os_str().to_os_string()],
             )?;
-            render_result(&result, cli.json, cli.quiet)?;
+            persist_stata_path_if_needed(&resolved_stata_path, &result)?;
+            render_result(&result, effective_cli.json, effective_cli.quiet)?;
             Ok(())
         }
         Commands::Repl => {
-            let python = resolve_python(cli.python.as_deref(), &repo_root.path)?;
-            let status = spawn_repl(&python.path, &repo_root.path, &cli)?;
+            let python = resolve_python(effective_cli.python.as_deref(), &repo_root.path)?;
+            let status = spawn_repl(&python.path, &repo_root.path, &effective_cli)?;
             if !status.success() {
                 bail!("stata-cli repl exited with status {}", status);
             }
             Ok(())
         }
         Commands::Data { command } => {
-            let python = resolve_python(cli.python.as_deref(), &repo_root.path)?;
+            let python = resolve_python(effective_cli.python.as_deref(), &repo_root.path)?;
             let (backend_command, backend_args) = data_backend_invocation(command);
             let payload = invoke_backend_json(
                 &python.path,
                 &repo_root.path,
-                &cli,
+                &effective_cli,
                 backend_command,
                 backend_args,
             )?;
-            render_json_payload(&payload, cli.json)
+            persist_stata_path_if_needed_json(&resolved_stata_path, &payload)?;
+            render_json_payload(&payload, effective_cli.json)
         }
     }
 }
 
 fn home_dir() -> Option<PathBuf> {
-    std::env::var_os("HOME").map(PathBuf::from)
+    if cfg!(windows) {
+        std::env::var_os("USERPROFILE").map(PathBuf::from)
+    } else {
+        std::env::var_os("HOME").map(PathBuf::from)
+    }
 }
 
 fn default_config_path() -> Option<PathBuf> {
-    home_dir().map(|home| home.join(".config").join("stata-cli").join("config.toml"))
+    if cfg!(windows) {
+        std::env::var_os("APPDATA")
+            .map(PathBuf::from)
+            .map(|dir| dir.join("stata-cli").join("config.toml"))
+    } else {
+        home_dir().map(|home| home.join(".config").join("stata-cli").join("config.toml"))
+    }
 }
 
 fn load_cli_config(path: &Path) -> Result<Option<CliConfig>> {
@@ -206,6 +249,30 @@ fn load_cli_config(path: &Path) -> Result<Option<CliConfig>> {
     let config = toml::from_str::<CliConfig>(&raw)
         .with_context(|| format!("Failed to parse config file at {}", path.display()))?;
     Ok(Some(config))
+}
+
+fn write_cli_config(path: &Path, config: &CliConfig) -> Result<()> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).with_context(|| {
+            format!("Failed to create config directory at {}", parent.display())
+        })?;
+    }
+    let serialized = toml::to_string_pretty(config)
+        .with_context(|| format!("Failed to serialize config for {}", path.display()))?;
+    fs::write(path, serialized)
+        .with_context(|| format!("Failed to write config file at {}", path.display()))?;
+    Ok(())
+}
+
+fn persist_resolved_stata_path(path: &Path) -> Result<()> {
+    let config_path = default_config_path().ok_or_else(|| {
+        anyhow::anyhow!(
+            "Could not determine the Windows config location for saving the Stata path."
+        )
+    })?;
+    let mut config = load_cli_config(&config_path)?.unwrap_or_default();
+    config.stata_path = Some(path.to_path_buf());
+    write_cli_config(&config_path, &config)
 }
 
 fn backend_script(repo_root: &Path) -> PathBuf {
@@ -292,22 +359,10 @@ fn resolve_repo_root() -> Result<RepoRootResolution> {
         .map(|path| path.display().to_string())
         .unwrap_or_else(|| "~/.config/stata-cli/config.toml".to_string());
     bail!(
-        "Could not locate the stata-mcp project root. Set {} to the repo path, run the command from inside the repo, or create {} with `project_root = \"/absolute/path/to/stata-mcp\"`.",
+        "Could not locate the stata-cli project root. Set {} to the repo path, run the command from inside the repo, or create {} with `project_root = \"/absolute/path/to/stata-cli\"`.",
         PROJECT_ROOT_ENV,
         config_hint
     )
-}
-
-fn is_candidate_available(candidate: &Path) -> bool {
-    if candidate.components().count() > 1 {
-        return candidate.exists();
-    }
-    Command::new(candidate)
-        .arg("--version")
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
-        .is_ok()
 }
 
 fn inspect_python_version(python: &Path) -> Result<String> {
@@ -327,40 +382,276 @@ fn inspect_python_version(python: &Path) -> Result<String> {
 }
 
 fn resolve_python(explicit: Option<&Path>, repo_root: &Path) -> Result<PythonResolution> {
-    let mut candidates: Vec<(PathBuf, &'static str)> = Vec::new();
     if let Some(path) = explicit {
-        candidates.push((path.to_path_buf(), "explicit --python"));
+        if !path.exists() {
+            bail!("Explicit --python path does not exist: {}", path.display());
+        }
+        let version = inspect_python_version(path)?;
+        if version != "3.11" {
+            bail!(
+                "Explicit --python must point to Python 3.11, but {} is Python {}.",
+                path.display(),
+                version
+            );
+        }
+        return Ok(PythonResolution {
+            path: path.to_path_buf(),
+            source: "explicit --python",
+            version,
+        });
     }
-    candidates.push((project_python(repo_root), "project .venv"));
-    candidates.push((PathBuf::from("python3"), "PATH python3"));
 
-    let mut failures: Vec<String> = Vec::new();
-    for (candidate, source) in candidates {
-        if candidate.as_os_str().is_empty() {
-            continue;
-        }
-        if !is_candidate_available(&candidate) {
-            failures.push(format!("{source}: not found"));
-            continue;
-        }
-        match inspect_python_version(&candidate) {
-            Ok(version) if version == "3.11" => {
-                return Ok(PythonResolution {
-                    path: candidate,
-                    source,
-                    version,
-                });
+    let candidate = project_python(repo_root);
+    if !candidate.exists() {
+        bail!(
+            "No compatible Python 3.11 interpreter found. This CLI expects the uv-managed project environment at {}. Run `uv sync --all-extras --python 3.11` in {}.",
+            candidate.display(),
+            repo_root.display()
+        );
+    }
+
+    let version = inspect_python_version(&candidate)?;
+    if version != "3.11" {
+        bail!(
+            "The uv-managed interpreter at {} is Python {}. Run `uv sync --all-extras --python 3.11` in {}.",
+            candidate.display(),
+            version,
+            repo_root.display()
+        );
+    }
+
+    Ok(PythonResolution {
+        path: candidate,
+        source: "project .venv",
+        version,
+    })
+}
+
+fn windows_default_stata_path() -> PathBuf {
+    PathBuf::from(r"C:\Program Files\Stata18")
+}
+
+fn validate_stata_path(path: &Path) -> Result<()> {
+    if !path.exists() {
+        bail!("Stata path does not exist: {}", path.display());
+    }
+    if !path.is_dir() {
+        bail!("Stata path is not a directory: {}", path.display());
+    }
+    Ok(())
+}
+
+fn prompt_for_stata_path(message: &str) -> Result<Option<PathBuf>> {
+    let mut stdout = io::stdout().lock();
+    writeln!(stdout, "{message}")?;
+    writeln!(
+        stdout,
+        "Enter your Stata installation directory, or press Enter to cancel:"
+    )?;
+    write!(stdout, "stata-path> ")?;
+    stdout.flush()?;
+
+    let mut input = String::new();
+    io::stdin().read_line(&mut input)?;
+    let trimmed = input.trim();
+    if trimmed.is_empty() {
+        return Ok(None);
+    }
+    Ok(Some(PathBuf::from(trimmed)))
+}
+
+fn resolve_windows_stata_path_with_prompt<F>(
+    cli: &Cli,
+    config: Option<&CliConfig>,
+    interactive: bool,
+    mut prompt: F,
+) -> Result<ResolvedStataPath>
+where
+    F: FnMut(&str) -> Result<Option<PathBuf>>,
+{
+    if let Some(path) = &cli.stata_path {
+        let candidate = PathBuf::from(path);
+        validate_stata_path(&candidate).with_context(|| {
+            format!(
+                "The --stata-path value is invalid. Pass a valid Windows Stata installation directory."
+            )
+        })?;
+        return Ok(ResolvedStataPath {
+            path: Some(candidate),
+            source: Some(StataPathSource::CliFlag),
+            save_to_config: false,
+        });
+    }
+
+    if let Some(value) = std::env::var_os(STATA_PATH_ENV) {
+        let candidate = PathBuf::from(value);
+        validate_stata_path(&candidate).with_context(|| {
+            format!(
+                "The {} environment variable points to an invalid Stata directory.",
+                STATA_PATH_ENV
+            )
+        })?;
+        return Ok(ResolvedStataPath {
+            path: Some(candidate),
+            source: Some(StataPathSource::Environment),
+            save_to_config: false,
+        });
+    }
+
+    if let Some(saved_path) = config.and_then(|item| item.stata_path.clone()) {
+        match validate_stata_path(&saved_path) {
+            Ok(()) => {
+                return Ok(ResolvedStataPath {
+                    path: Some(saved_path),
+                    source: Some(StataPathSource::Config),
+                    save_to_config: false,
+                })
             }
-            Ok(version) => failures.push(format!("{source}: found Python {version}")),
-            Err(error) => failures.push(format!("{source}: {error}")),
+            Err(error) => {
+                if !interactive {
+                    bail!(
+                        "{}. Update {} or pass --stata-path.",
+                        error,
+                        default_config_path()
+                            .map(|path| path.display().to_string())
+                            .unwrap_or_else(|| "%APPDATA%\\stata-cli\\config.toml".to_string())
+                    );
+                }
+
+                let mut prompt_message = format!(
+                    "{}\nSaved path came from {}.",
+                    error,
+                    default_config_path()
+                        .map(|path| path.display().to_string())
+                        .unwrap_or_else(|| "%APPDATA%\\stata-cli\\config.toml".to_string())
+                );
+                loop {
+                    match prompt(&prompt_message)? {
+                        Some(candidate) => match validate_stata_path(&candidate) {
+                            Ok(()) => {
+                                return Ok(ResolvedStataPath {
+                                    path: Some(candidate),
+                                    source: Some(StataPathSource::Prompt),
+                                    save_to_config: true,
+                                })
+                            }
+                            Err(prompt_error) => {
+                                prompt_message = format!(
+                                    "{}\nPlease enter a valid Windows Stata installation directory.",
+                                    prompt_error
+                                );
+                            }
+                        },
+                        None => bail!(
+                            "Stata path is required on Windows. Pass --stata-path or update {}.",
+                            default_config_path()
+                                .map(|path| path.display().to_string())
+                                .unwrap_or_else(|| "%APPDATA%\\stata-cli\\config.toml".to_string())
+                        ),
+                    }
+                }
+            }
         }
     }
 
-    bail!(
-        "No compatible Python 3.11 interpreter found. Try --python, or run `uv sync --all-extras --python 3.11` in {}. Checked: {}",
-        repo_root.display(),
-        failures.join("; ")
-    )
+    let default_path = windows_default_stata_path();
+    match validate_stata_path(&default_path) {
+        Ok(()) => Ok(ResolvedStataPath {
+            path: Some(default_path),
+            source: Some(StataPathSource::Default),
+            save_to_config: false,
+        }),
+        Err(error) => {
+            if !interactive {
+                bail!(
+                    "{}. Pass --stata-path or create {} with `stata_path = \"C:\\\\Path\\\\To\\\\Stata\"`.",
+                    error,
+                    default_config_path()
+                        .map(|path| path.display().to_string())
+                        .unwrap_or_else(|| "%APPDATA%\\stata-cli\\config.toml".to_string())
+                );
+            }
+
+            let mut prompt_message =
+                format!("{}\nWindows defaults to {}.", error, default_path.display());
+            loop {
+                match prompt(&prompt_message)? {
+                    Some(candidate) => match validate_stata_path(&candidate) {
+                        Ok(()) => {
+                            return Ok(ResolvedStataPath {
+                                path: Some(candidate),
+                                source: Some(StataPathSource::Prompt),
+                                save_to_config: true,
+                            })
+                        }
+                        Err(prompt_error) => {
+                            prompt_message = format!(
+                                "{}\nPlease enter a valid Windows Stata installation directory.",
+                                prompt_error
+                            );
+                        }
+                    },
+                    None => bail!(
+                        "Stata path is required on Windows. Pass --stata-path or create {}.",
+                        default_config_path()
+                            .map(|path| path.display().to_string())
+                            .unwrap_or_else(|| "%APPDATA%\\stata-cli\\config.toml".to_string())
+                    ),
+                }
+            }
+        }
+    }
+}
+
+fn resolve_effective_stata_path(cli: &Cli) -> Result<ResolvedStataPath> {
+    if !cfg!(windows) {
+        return Ok(ResolvedStataPath {
+            path: cli.stata_path.as_ref().map(PathBuf::from),
+            source: cli.stata_path.as_ref().map(|_| StataPathSource::CliFlag),
+            save_to_config: false,
+        });
+    }
+
+    let config = if let Some(path) = default_config_path() {
+        load_cli_config(&path)?
+    } else {
+        None
+    };
+
+    let interactive = io::stdin().is_terminal() && io::stdout().is_terminal();
+    resolve_windows_stata_path_with_prompt(cli, config.as_ref(), interactive, prompt_for_stata_path)
+}
+
+fn persist_stata_path_if_needed(
+    resolved_stata_path: &ResolvedStataPath,
+    result: &ExecutionResult,
+) -> Result<()> {
+    if resolved_stata_path.save_to_config && result.status == "success" {
+        if let Some(path) = &resolved_stata_path.path {
+            persist_resolved_stata_path(path)?;
+        }
+    }
+    Ok(())
+}
+
+fn persist_stata_path_if_needed_json(
+    resolved_stata_path: &ResolvedStataPath,
+    payload: &Value,
+) -> Result<()> {
+    if !resolved_stata_path.save_to_config {
+        return Ok(());
+    }
+
+    let status = payload
+        .get("status")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    if status == "success" {
+        if let Some(path) = &resolved_stata_path.path {
+            persist_resolved_stata_path(path)?;
+        }
+    }
+    Ok(())
 }
 
 fn base_backend_args(repo_root: &Path, cli: &Cli, json: bool) -> Vec<OsString> {
@@ -624,7 +915,11 @@ fn spawn_repl(python: &Path, repo_root: &Path, cli: &Cli) -> Result<ExitStatus> 
         .with_context(|| "Failed to launch interactive backend".to_string())
 }
 
-fn doctor_command(cli: &Cli, repo_root: &RepoRootResolution) -> Result<()> {
+fn doctor_command(
+    cli: &Cli,
+    repo_root: &RepoRootResolution,
+    resolved_stata_path: &ResolvedStataPath,
+) -> Result<()> {
     let config_path = default_config_path();
     let backend = backend_script(&repo_root.path);
     let mut checks = Vec::new();
@@ -675,6 +970,21 @@ fn doctor_command(cli: &Cli, repo_root: &RepoRootResolution) -> Result<()> {
         });
     }
 
+    if cfg!(windows) {
+        match (&resolved_stata_path.path, resolved_stata_path.source) {
+            (Some(path), Some(source)) => checks.push(DoctorCheck {
+                name: "stata_path",
+                status: "ok",
+                detail: format!("{} (source: {:?})", path.display(), source),
+            }),
+            _ => checks.push(DoctorCheck {
+                name: "stata_path",
+                status: "error",
+                detail: "Windows requires a valid Stata installation directory.".to_string(),
+            }),
+        }
+    }
+
     let python_resolution = match resolve_python(cli.python.as_deref(), &repo_root.path) {
         Ok(resolution) => {
             checks.push(DoctorCheck {
@@ -707,11 +1017,14 @@ fn doctor_command(cli: &Cli, repo_root: &RepoRootResolution) -> Result<()> {
             "run",
             vec![OsString::from("--code"), OsString::from("display 1+1")],
         ) {
-            Ok(result) if result.status == "success" => checks.push(DoctorCheck {
-                name: "backend_probe",
-                status: "ok",
-                detail: "Backend successfully executed `display 1+1`.".to_string(),
-            }),
+            Ok(result) if result.status == "success" => {
+                persist_stata_path_if_needed(resolved_stata_path, &result)?;
+                checks.push(DoctorCheck {
+                    name: "backend_probe",
+                    status: "ok",
+                    detail: "Backend successfully executed `display 1+1`.".to_string(),
+                });
+            }
             Ok(result) => checks.push(DoctorCheck {
                 name: "backend_probe",
                 status: "error",
@@ -764,14 +1077,16 @@ fn doctor_command(cli: &Cli, repo_root: &RepoRootResolution) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::os::unix::fs::PermissionsExt;
     use tempfile::tempdir;
+
+    #[cfg(unix)]
+    use std::os::unix::fs::PermissionsExt;
 
     fn make_repo(dir: &Path) {
         fs::create_dir_all(dir.join("src")).unwrap();
         fs::write(
             dir.join("pyproject.toml"),
-            "[project]\nname = 'stata-mcp'\n",
+            "[project]\nname = 'stata-cli'\n",
         )
         .unwrap();
         fs::write(
@@ -779,6 +1094,10 @@ mod tests {
             "print('ok')\n",
         )
         .unwrap();
+    }
+
+    fn windows_like_cli() -> Cli {
+        Cli::parse_from(["stata-cli", "doctor"])
     }
 
     #[test]
@@ -803,14 +1122,17 @@ mod tests {
 
     #[test]
     fn parse_data_export_command() {
+        let temp = std::env::temp_dir();
+        let output_path = temp.join("out.csv");
+        let input_path = temp.join("input.dta");
         let cli = Cli::parse_from([
             "stata-cli",
             "data",
             "export-csv",
             "--output",
-            "/tmp/out.csv",
+            output_path.to_string_lossy().as_ref(),
             "--input-dta",
-            "/tmp/input.dta",
+            input_path.to_string_lossy().as_ref(),
             "--replace",
         ]);
 
@@ -824,8 +1146,8 @@ mod tests {
                         ..
                     },
             } => {
-                assert_eq!(output, PathBuf::from("/tmp/out.csv"));
-                assert_eq!(input_dta, Some(PathBuf::from("/tmp/input.dta")));
+                assert_eq!(output, output_path);
+                assert_eq!(input_dta, Some(input_path));
                 assert!(replace);
             }
             _ => panic!("expected data export-csv command"),
@@ -857,7 +1179,7 @@ mod tests {
     #[test]
     fn discover_repo_root_from_ancestor_directory() {
         let temp = tempdir().unwrap();
-        let repo = temp.path().join("stata-mcp");
+        let repo = temp.path().join("stata-cli");
         make_repo(&repo);
         let nested = repo.join("rust-cli").join("src");
         fs::create_dir_all(&nested).unwrap();
@@ -867,13 +1189,39 @@ mod tests {
     }
 
     #[test]
-    fn load_cli_config_reads_project_root() {
+    fn load_cli_config_reads_project_root_and_stata_path() {
         let temp = tempdir().unwrap();
         let config_path = temp.path().join("config.toml");
-        fs::write(&config_path, "project_root = \"/tmp/stata-mcp\"\n").unwrap();
+        let project_root = temp.path().join("project");
+        let stata_path = temp.path().join("Stata18");
+        fs::write(
+            &config_path,
+            format!(
+                "project_root = {:?}\nstata_path = {:?}\n",
+                project_root.to_string_lossy(),
+                stata_path.to_string_lossy()
+            ),
+        )
+        .unwrap();
 
         let config = load_cli_config(&config_path).unwrap().unwrap();
-        assert_eq!(config.project_root, Some(PathBuf::from("/tmp/stata-mcp")));
+        assert_eq!(config.project_root, Some(project_root));
+        assert_eq!(config.stata_path, Some(stata_path));
+    }
+
+    #[test]
+    fn write_cli_config_preserves_fields() {
+        let temp = tempdir().unwrap();
+        let config_path = temp.path().join("config.toml");
+        let config = CliConfig {
+            project_root: Some(temp.path().join("repo")),
+            stata_path: Some(temp.path().join("Stata18")),
+        };
+
+        write_cli_config(&config_path, &config).unwrap();
+        let reloaded = load_cli_config(&config_path).unwrap().unwrap();
+        assert_eq!(reloaded.project_root, config.project_root);
+        assert_eq!(reloaded.stata_path, config.stata_path);
     }
 
     #[test]
@@ -893,16 +1241,172 @@ mod tests {
     #[test]
     fn inspect_python_version_accepts_mock_interpreter() {
         let dir = tempdir().unwrap();
-        let script = dir.path().join("python3.11-mock");
-        fs::write(
-            &script,
-            "#!/bin/sh\nif [ \"$1\" = \"-c\" ]; then\n  echo 3.11\nelse\n  echo Python 3.11.0\nfi\n",
-        )
-        .unwrap();
-        let mut perms = fs::metadata(&script).unwrap().permissions();
-        perms.set_mode(0o755);
-        fs::set_permissions(&script, perms).unwrap();
+        let script = if cfg!(windows) {
+            dir.path().join("python311-mock.cmd")
+        } else {
+            dir.path().join("python311-mock")
+        };
+
+        if cfg!(windows) {
+            fs::write(
+                &script,
+                "@echo off\r\nif \"%1\"==\"-c\" (\r\n  echo 3.11\r\n) else (\r\n  echo Python 3.11.0\r\n)\r\n",
+            )
+            .unwrap();
+        } else {
+            fs::write(
+                &script,
+                "#!/bin/sh\nif [ \"$1\" = \"-c\" ]; then\n  echo 3.11\nelse\n  echo Python 3.11.0\nfi\n",
+            )
+            .unwrap();
+            #[cfg(unix)]
+            {
+                let mut perms = fs::metadata(&script).unwrap().permissions();
+                perms.set_mode(0o755);
+                fs::set_permissions(&script, perms).unwrap();
+            }
+        }
 
         assert_eq!(inspect_python_version(&script).unwrap(), "3.11");
+    }
+
+    #[test]
+    fn resolve_python_uses_uv_managed_environment() {
+        let repo = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .expect("rust-cli should live under the repo root");
+        let expected = project_python(repo);
+
+        let resolved = resolve_python(None, repo).unwrap();
+        assert_eq!(resolved.path, expected);
+        assert_eq!(resolved.source, "project .venv");
+        assert_eq!(resolved.version, "3.11");
+    }
+
+    #[test]
+    fn resolve_python_errors_when_uv_environment_is_missing() {
+        let temp = tempdir().unwrap();
+        let repo = temp.path().join("repo");
+        make_repo(&repo);
+
+        let error = resolve_python(None, &repo).unwrap_err().to_string();
+        assert!(error.contains("uv sync --all-extras --python 3.11"));
+    }
+
+    #[test]
+    fn windows_config_path_uses_appdata() {
+        if !cfg!(windows) {
+            return;
+        }
+        let temp = tempdir().unwrap();
+        std::env::set_var("APPDATA", temp.path());
+        let path = default_config_path().unwrap();
+        std::env::remove_var("APPDATA");
+        assert_eq!(path, temp.path().join("stata-cli").join("config.toml"));
+    }
+
+    #[test]
+    fn resolve_windows_stata_path_prefers_cli_flag() {
+        if !cfg!(windows) {
+            return;
+        }
+        let temp = tempdir().unwrap();
+        let stata_path = temp.path().join("Stata18");
+        fs::create_dir_all(&stata_path).unwrap();
+        let cli = Cli::parse_from([
+            "stata-cli",
+            "--stata-path",
+            stata_path.to_string_lossy().as_ref(),
+            "doctor",
+        ]);
+
+        let resolved = resolve_windows_stata_path_with_prompt(&cli, None, false, |_| {
+            panic!("should not prompt")
+        })
+        .unwrap();
+
+        assert_eq!(resolved.path, Some(stata_path));
+        assert_eq!(resolved.source, Some(StataPathSource::CliFlag));
+        assert!(!resolved.save_to_config);
+    }
+
+    #[test]
+    fn resolve_windows_stata_path_uses_saved_config() {
+        if !cfg!(windows) {
+            return;
+        }
+        let temp = tempdir().unwrap();
+        let stata_path = temp.path().join("Stata18");
+        fs::create_dir_all(&stata_path).unwrap();
+        let config = CliConfig {
+            project_root: None,
+            stata_path: Some(stata_path.clone()),
+        };
+
+        let resolved = resolve_windows_stata_path_with_prompt(
+            &windows_like_cli(),
+            Some(&config),
+            false,
+            |_| panic!("should not prompt"),
+        )
+        .unwrap();
+
+        assert_eq!(resolved.path, Some(stata_path));
+        assert_eq!(resolved.source, Some(StataPathSource::Config));
+        assert!(!resolved.save_to_config);
+    }
+
+    #[test]
+    fn resolve_windows_stata_path_errors_non_interactive_when_saved_path_missing() {
+        if !cfg!(windows) {
+            return;
+        }
+        let temp = tempdir().unwrap();
+        let config = CliConfig {
+            project_root: None,
+            stata_path: Some(temp.path().join("MissingStata")),
+        };
+        let error = resolve_windows_stata_path_with_prompt(
+            &windows_like_cli(),
+            Some(&config),
+            false,
+            |_| panic!("should not prompt"),
+        )
+        .unwrap_err()
+        .to_string();
+
+        assert!(error.contains("Update"));
+    }
+
+    #[test]
+    fn resolve_windows_stata_path_prompts_and_marks_for_save() {
+        if !cfg!(windows) {
+            return;
+        }
+        let temp = tempdir().unwrap();
+        let saved_invalid = temp.path().join("MissingStata");
+        let prompted = temp.path().join("PromptedStata");
+        fs::create_dir_all(&prompted).unwrap();
+        let config = CliConfig {
+            project_root: None,
+            stata_path: Some(saved_invalid),
+        };
+        let mut prompt_count = 0usize;
+
+        let resolved = resolve_windows_stata_path_with_prompt(
+            &windows_like_cli(),
+            Some(&config),
+            true,
+            |_| {
+                prompt_count += 1;
+                Ok(Some(prompted.clone()))
+            },
+        )
+        .unwrap();
+
+        assert_eq!(prompt_count, 1);
+        assert_eq!(resolved.path, Some(prompted));
+        assert_eq!(resolved.source, Some(StataPathSource::Prompt));
+        assert!(resolved.save_to_config);
     }
 }
