@@ -1,0 +1,4 @@
+[console_scripts]
+stata-cli-backend = stata_cli_backend:main
+stata-mcp = stata_mcp:main
+stata-mcp-http = stata_mcp_server:main
