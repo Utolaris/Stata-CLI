@@ -347,6 +347,11 @@ fn normalize_repo_root(path: &Path) -> Option<PathBuf> {
     fs::canonicalize(candidate).ok()
 }
 
+fn resolve_repo_root_from_executable() -> Option<PathBuf> {
+    let exe_path = std::env::current_exe().ok()?;
+    normalize_repo_root(&exe_path)
+}
+
 fn resolve_repo_root() -> Result<RepoRootResolution> {
     if let Some(value) = std::env::var_os(PROJECT_ROOT_ENV) {
         let candidate = PathBuf::from(value);
@@ -365,6 +370,13 @@ fn resolve_repo_root() -> Result<RepoRootResolution> {
                 source: "current directory",
             });
         }
+    }
+
+    if let Some(path) = resolve_repo_root_from_executable() {
+        return Ok(RepoRootResolution {
+            path,
+            source: "executable location",
+        });
     }
 
     if let Some(config_path) = default_config_path() {
@@ -1335,6 +1347,24 @@ mod tests {
 
         let discovered = discover_repo_root_from(&nested).unwrap();
         assert_eq!(discovered, repo);
+    }
+
+    #[test]
+    fn executable_path_inside_repo_bin_discovers_repo_root() {
+        let temp = tempdir().unwrap();
+        let repo = temp.path().join("stata-cli");
+        make_repo(&repo);
+        let bin = repo.join("bin");
+        fs::create_dir_all(&bin).unwrap();
+        let fake_exe = if cfg!(windows) {
+            bin.join("stata-cli.exe")
+        } else {
+            bin.join("stata-cli")
+        };
+        fs::write(&fake_exe, "placeholder").unwrap();
+
+        let discovered = normalize_repo_root(&fake_exe).unwrap();
+        assert_eq!(discovered, fs::canonicalize(repo).unwrap());
     }
 
     #[test]

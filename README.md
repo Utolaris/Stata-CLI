@@ -10,6 +10,7 @@ This repo is designed so an AI agent can quickly understand the project, install
 
 ```text
 .
+├── bin/                  # repo-local CLI binaries to put on PATH
 ├── dist/                 # release archives for the CLI
 ├── rust-cli/             # native Rust CLI source
 ├── skills/               # Codex skill for local usage
@@ -38,41 +39,42 @@ If Stata is installed somewhere else, pass `--stata-path` or set it in the CLI c
 uv sync --all-extras --python 3.11
 ```
 
-### 3. Download and install the CLI binary
+### 3. Add the repo-local binary directory to `PATH`
 
-Release `v0.0.2` ships a macOS Apple Silicon binary named `stata-cli-darwin-arm64.tar.gz` and a Windows binary named `stata-cli-windows-x86_64.zip`.
+This project ships a repo-local binary under `bin/` because the CLI depends on the Python backend that lives in the same repository.
 
-Install it into `~/.local/bin`:
-
-```bash
-mkdir -p ~/.local/bin
-curl -L https://github.com/VO-VOO/stata-cli/releases/download/v0.0.2/stata-cli-darwin-arm64.tar.gz \
-  | tar -xz -C ~/.local/bin
-```
-
-If `~/.local/bin` is not already on `PATH`, add this to your shell config:
+After cloning the repo, add its `bin/` directory to your shell `PATH`:
 
 ```bash
-export PATH="$HOME/.local/bin:$PATH"
-```
-
-### 4. Point the CLI at this repository
-
-The binary needs to know where the Python backend lives.
-
-Create `~/.config/stata-cli/config.toml`:
-
-```toml
-project_root = "/absolute/path/to/stata-cli"
+export PATH="/absolute/path/to/stata-cli/bin:$PATH"
 ```
 
 Example:
 
-```toml
-project_root = "/Users/utolaris/Documents/ai/stata-cli"
+```bash
+export PATH="/Users/utolaris/Documents/ai/stata-cli/bin:$PATH"
 ```
 
-### 5. Install the Codex skill
+Put that line in your shell config if you want it to persist.
+
+The binary in `bin/` resolves the repository root from its own location, so keeping it inside the repo means you do not need a separate global install step.
+
+If you are on a platform that does not already have a matching binary in `bin/`, build one locally and copy it there:
+
+macOS / Linux:
+
+```bash
+./scripts/update_repo_bin.sh
+```
+
+Windows PowerShell:
+
+```powershell
+cargo build --release --manifest-path rust-cli/Cargo.toml
+Copy-Item rust-cli\\target\\release\\stata-cli.exe bin\\stata-cli.exe
+```
+
+### 4. Install the Codex skill
 
 Copy the bundled skill into Codex's local skill directory:
 
@@ -81,7 +83,7 @@ mkdir -p ~/.codex/skills/stata-cli
 cp skills/stata-cli/SKILL.md ~/.codex/skills/stata-cli/SKILL.md
 ```
 
-### 6. Verify the setup
+### 5. Verify the setup
 
 ```bash
 stata-cli doctor
@@ -188,7 +190,7 @@ stata-cli data export-csv --input-dta /absolute/path/to/data.dta --output /absol
 
 - `stata-cli` is not installed or not on `PATH`
 - The uv-managed Python 3.11 environment is missing
-- The repository path in the CLI config file is wrong
+- The binary was moved away from the repository, so it can no longer locate the Python backend
 - Stata 18 is not installed, or `--stata-path` points to the wrong location
 - PyStata or the local Stata Python bridge is unavailable
 - The target `.do` or `.dta` file path does not exist
