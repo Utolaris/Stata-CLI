@@ -1,32 +1,19 @@
 # stata-cli
 
-[Original project: hanlulong/stata-mcp](https://github.com/hanlulong/stata-mcp)
-
 `stata-cli` is a local command-line tool for running Stata code, `.do` files, and `.dta` data through the Python/PyStata backend in this repository.
 
 This repo is designed so an AI agent can quickly understand the project, install the right dependencies, bootstrap an analysis workspace, and run Stata locally without needing VS Code.
 
-## Project Structure
-
-```text
-.
-├── bin/                  # repo-local CLI binaries to put on PATH
-├── dist/                 # release archives for the CLI
-├── rust-cli/             # native Rust CLI source
-├── skills/               # Codex skill for local usage
-├── src/                  # Python backend and MCP server
-├── tests/                # automated tests
-└── README.md
-```
+This CLI provides a REPL that allows users to run Stata commands from any directory and supports syntax highlighting; it is designed for human use, not direct AI use.
 
 ## Install
 
 ### 1. Install Stata 18
 
-Install Stata 18 first. On macOS, the default location is best:
+Install Stata 18 first. On Windows, the default location is best:
 
 ```text
-/Applications/Stata
+C:\Program Files\Stata18
 ```
 
 If Stata is installed somewhere else, pass `--stata-path` or set it in the CLI config.
@@ -47,12 +34,6 @@ After cloning the repo, add its `bin/` directory to your shell `PATH`:
 
 ```bash
 export PATH="/absolute/path/to/stata-cli/bin:$PATH"
-```
-
-Example:
-
-```bash
-export PATH="/Users/utolaris/Documents/ai/stata-cli/bin:$PATH"
 ```
 
 Put that line in your shell config if you want it to persist.
@@ -201,11 +182,10 @@ If setup looks wrong, start with:
 stata-cli doctor
 ```
 
-## Release
-
-- Current CLI release: `v0.0.2`
-- Current binary crate version: `0.0.2`
-
 ## License
 
 MIT
+
+## Acknowledgements
+
+This project was inspired by the design of [stata-mcp](https://github.com/hanlulong/stata-mcp). Thanks to the original project for the ideas and structure it provided.
