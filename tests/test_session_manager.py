@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 Tests for Session Manager - Multi-session Stata support
 
@@ -14,25 +13,17 @@ These tests verify:
 Run with: python tests/test_session_manager.py
 """
 
+import multiprocessing
 import os
 import sys
-import time
-import queue
-import unittest
 import threading
-import multiprocessing
+import time
+import unittest
 
 # Add src to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
-from session_manager import (
-    SessionManager,
-    SessionState,
-    Session,
-    init_session_manager,
-    get_session_manager
-)
-from stata_worker import WorkerState, CommandType
+from session_manager import Session, SessionManager, SessionState
 
 
 # Configuration for tests
@@ -503,6 +494,7 @@ class TestSessionCleanup(unittest.TestCase):
 class TestErrorHandling(unittest.TestCase):
     """Test error handling"""
 
+    @skip_if_no_stata
     def test_execute_on_nonexistent_session_auto_creates(self):
         """Test that executing on a missing named session auto-creates it."""
         manager = SessionManager(

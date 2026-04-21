@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 Local Python backend for the Rust stata-cli wrapper.
 
@@ -16,22 +15,23 @@ import asyncio
 import json
 import logging
 import os
+import re
 import sys
 import tempfile
-import re
 from pathlib import Path
-from typing import Optional
 
 if os.getenv("STATA_CLI_REPL_MODE", "").strip().lower() in {"1", "true", "yes", "on"}:
     logging.basicConfig(level=logging.ERROR, force=True)
 
-import stata_mcp
-import stata_mcp_server as legacy
-from api_models import ExecutionResult, GraphArtifact
-from prompt_toolkit import PromptSession
+from prompt_toolkit import PromptSession, print_formatted_text
+from prompt_toolkit.formatted_text import FormattedText
 from prompt_toolkit.history import FileHistory
 from prompt_toolkit.lexers import Lexer
 from prompt_toolkit.styles import Style
+
+import stata_mcp
+import stata_mcp_server as legacy
+from api_models import ExecutionResult, GraphArtifact
 from session_manager import SessionManager
 
 TEST_MODE_ENV = "STATA_CLI_BACKEND_TEST_MODE"
@@ -137,63 +137,211 @@ Check availability first with `which <command>`. If a command is missing, ask th
 REPL_STYLE = Style.from_dict(
     {
         "prompt": "ansicyan bold",
-        "keyword": "ansimagenta bold",
+        "command": "ansimagenta bold",
+        "addon-command": "ansibrightmagenta bold",
+        "keyword": "ansimagenta",
+        "function": "ansiblue",
         "string": "ansigreen",
         "comment": "ansibrightblack italic",
         "macro": "ansiyellow",
+        "macro-command": "ansiyellow bold",
+        "factor": "ansibrightcyan bold",
+        "builtin-variable": "ansibrightblue",
+        "result-class": "ansibrightgreen",
         "number": "ansiblue",
         "operator": "ansired",
+        "echo-prompt": "ansicyan bold",
+        "warning": "ansiyellow bold",
+        "note": "ansibrightcyan",
+        "error": "ansired bold",
+        "return-code": "ansired bold",
+        "result-number": "ansibrightblue bold",
         "text": "",
     }
 )
 
-REPL_KEYWORDS = {
+REPL_COMMANDS = {
+    "about",
     "append",
+    "areg",
     "assert",
+    "by",
     "bysort",
     "capture",
     "cd",
     "clear",
+    "collapse",
+    "contract",
     "count",
+    "decode",
     "describe",
     "display",
     "do",
     "drop",
     "egen",
+    "encode",
+    "estimates",
     "export",
     "forvalues",
     "foreach",
     "generate",
     "graph",
+    "gsort",
     "if",
     "in",
+    "input",
+    "insheet",
+    "import",
+    "ivregress",
     "keep",
     "list",
     "local",
     "log",
+    "logit",
     "merge",
+    "net",
+    "notes",
+    "predict",
+    "preserve",
+    "probit",
+    "reg",
     "quietly",
     "regress",
+    "rename",
     "replace",
+    "reshape",
+    "restore",
     "save",
     "scalar",
     "set",
     "sort",
+    "summ",
     "summarize",
     "tabulate",
-    "twoway",
     "use",
+    "twoway",
     "which",
+    "xtdescribe",
+    "xtreg",
+    "xtset",
+    "xtsum",
 }
 
-REPL_OPERATORS = {"=", "==", ">=", "<=", ">", "<", "+", "-", "*", "/", "(", ")", ",", ":"}
+REPL_ADDON_COMMANDS = {
+    "boottest",
+    "coefplot",
+    "estout",
+    "esttab",
+    "gcollapse",
+    "gcontract",
+    "gegen",
+    "gisid",
+    "glevelsof",
+    "gquantiles",
+    "ivreghdfe",
+    "ivreg2",
+    "outreg",
+    "outreg2",
+    "ppmlhdfe",
+    "reghdfe",
+    "winsor2",
+}
+
+REPL_CONTROL_KEYWORDS = {
+    "else",
+    "forvalues",
+    "foreach",
+    "if",
+    "in",
+    "while",
+}
+
+REPL_MACRO_COMMANDS = {
+    "global",
+    "local",
+    "macro",
+    "tempfile",
+    "tempname",
+    "tempvar",
+}
+
+REPL_BUILTIN_FUNCTIONS = {
+    "abs",
+    "ceil",
+    "cond",
+    "exp",
+    "floor",
+    "length",
+    "ln",
+    "log",
+    "lower",
+    "max",
+    "min",
+    "missing",
+    "mi",
+    "real",
+    "regexm",
+    "regexr",
+    "regexs",
+    "round",
+    "sqrt",
+    "string",
+    "strpos",
+    "subinstr",
+    "substr",
+    "trim",
+    "upper",
+    "word",
+    "wordcount",
+}
+
+REPL_RESULT_CLASSES = {"c", "e", "r", "s"}
+REPL_BUILTIN_VARIABLES = {"_b", "_coef", "_cons", "_n", "_N", "_rc", "_se"}
+REPL_OPERATORS = {
+    "!",
+    "!=",
+    "#",
+    "&",
+    "&&",
+    "(",
+    ")",
+    "*",
+    "+",
+    ",",
+    "-",
+    ".",
+    "/",
+    ":",
+    ":=",
+    "<",
+    "<=",
+    "=",
+    "==",
+    ">",
+    ">=",
+    "^",
+    "|",
+    "||",
+    "~",
+    "~=",
+}
+REPL_FACTOR_PREFIX_PATTERN = re.compile(r"(?:[ico]|ib|ibn|bn|b|o|n|[io]?b\d+|[io]?\d+)", re.IGNORECASE)
+REPL_NUMBER_PATTERN = re.compile(r"[-+]?(?:\d+\.\d*|\.\d+|\d+)(?:[eE][-+]?\d+)?")
 REPL_TOKEN_PATTERN = re.compile(
-    r'(\s+|//.*|/\*.*?\*/|"(?:[^"\\]|\\.)*"|`[^`]*\'|\$[A-Za-z_][A-Za-z0-9_]*|>=|<=|==|\b\d+(?:\.\d+)?\b|\b[A-Za-z_][A-Za-z0-9_]*\b|.)'
+    r'(\s+|///.*|//.*|/\*.*?\*/|`"(?:[^"\n]|"")*"\'|"(?:[^"\n]|"")*"|`[^\'\n]+\'|\$[A-Za-z_][A-Za-z0-9_]*|>=|<=|==|!=|~=|:=|\|\||&&|[-+]?(?:\d+\.\d*|\.\d+|\d+)(?:[eE][-+]?\d+)?|\b[A-Za-z_][A-Za-z0-9_]*\b|[()\[\],:#=<>+\-*/.&|!^~])'
 )
 REPL_LOG_INFO_PATTERN = re.compile(
     r'^\s*(name:|log:|log type:|opened on:|closed on:)\s*',
     re.IGNORECASE,
 )
+REPL_RETURN_CODE_PATTERN = re.compile(r"^\s*r\((\d+)\);\s*$", re.IGNORECASE)
+REPL_OUTPUT_NOTE_PATTERN = re.compile(r"^\s*note:", re.IGNORECASE)
+REPL_OUTPUT_WARNING_PATTERN = re.compile(r"^\s*warning:", re.IGNORECASE)
+REPL_OUTPUT_ERROR_PATTERN = re.compile(
+    r"^\s*(?:error\b|invalid syntax\b|no observations\b|file .+ not found\b|type mismatch\b|conformability error\b|command .+ unrecognized\b|insufficient observations\b)",
+    re.IGNORECASE,
+)
+REPL_INLINE_NUMBER_PATTERN = re.compile(r"(?<![\w.])[-+]?(?:\d+\.\d*|\.\d+|\d+)(?:[eE][-+]?\d+)?")
 
 
 class StataReplLexer(Lexer):
@@ -212,7 +360,7 @@ def _emit_json(result: ExecutionResult) -> int:
     return 0 if result.status == "success" else 1
 
 
-def _render_error(message: str, session_id: Optional[str] = None) -> ExecutionResult:
+def _render_error(message: str, session_id: str | None = None) -> ExecutionResult:
     return ExecutionResult(
         status="error",
         output="",
@@ -319,29 +467,67 @@ def _repl_history_path() -> Path:
     return base / "repl_history.txt"
 
 
+def _next_non_whitespace_token(tokens: list[str], start: int) -> str | None:
+    for token in tokens[start:]:
+        if token and not token.isspace():
+            return token
+    return None
+
+
+def _is_number_token(token: str) -> bool:
+    return bool(REPL_NUMBER_PATTERN.fullmatch(token))
+
+
+def _is_factor_prefix(token: str, next_token: str | None) -> bool:
+    return next_token == "." and bool(REPL_FACTOR_PREFIX_PATTERN.fullmatch(token))
+
+
 def _lex_stata_line(line: str) -> list[tuple[str, str]]:
     stripped = line.lstrip()
     if stripped.startswith("*"):
         return [("class:comment", line)]
 
+    tokens = REPL_TOKEN_PATTERN.findall(line)
     fragments: list[tuple[str, str]] = []
-    for token in REPL_TOKEN_PATTERN.findall(line):
+    for index, token in enumerate(tokens):
         lower = token.lower()
+        next_token = _next_non_whitespace_token(tokens, index + 1)
         if not token:
             continue
         if token.isspace():
             fragments.append(("class:text", token))
-        elif token.startswith("//") or (token.startswith("/*") and token.endswith("*/")):
+        elif (
+            token.startswith("///")
+            or token.startswith("//")
+            or (token.startswith("/*") and token.endswith("*/"))
+        ):
             fragments.append(("class:comment", token))
-        elif token.startswith('"') and token.endswith('"'):
+        elif (
+            token.startswith('"') and token.endswith('"')
+            or token.startswith('`"') and token.endswith('"\'')
+        ):
             fragments.append(("class:string", token))
         elif token.startswith("`") or token.startswith("$"):
             fragments.append(("class:macro", token))
-        elif lower in REPL_KEYWORDS:
+        elif lower in REPL_MACRO_COMMANDS:
+            fragments.append(("class:macro-command", token))
+        elif lower in REPL_CONTROL_KEYWORDS:
             fragments.append(("class:keyword", token))
+        elif lower in REPL_ADDON_COMMANDS:
+            fragments.append(("class:addon-command", token))
+        elif lower in REPL_COMMANDS:
+            fragments.append(("class:command", token))
+        elif lower in REPL_BUILTIN_VARIABLES:
+            fragments.append(("class:builtin-variable", token))
+        elif _is_factor_prefix(lower, next_token):
+            fragments.append(("class:factor", token))
+        elif lower in REPL_RESULT_CLASSES and next_token == "(":
+            fragments.append(("class:result-class", token))
+        elif lower in REPL_BUILTIN_FUNCTIONS and next_token == "(":
+            fragments.append(("class:function", token))
         elif token in REPL_OPERATORS:
             fragments.append(("class:operator", token))
-        elif token.replace(".", "", 1).isdigit():
+        elif _is_number_token(token):
             fragments.append(("class:number", token))
         else:
             fragments.append(("class:text", token))
@@ -409,10 +595,61 @@ def _sanitize_repl_output(text: str) -> str:
     return "\n".join(collapsed)
 
 
+def _highlight_numbers_in_text(text: str, base_style: str = "class:text") -> list[tuple[str, str]]:
+    fragments: list[tuple[str, str]] = []
+    position = 0
+    for match in REPL_INLINE_NUMBER_PATTERN.finditer(text):
+        start, end = match.span()
+        if start > position:
+            fragments.append((base_style, text[position:start]))
+        fragments.append(("class:result-number", text[start:end]))
+        position = end
+    if position < len(text):
+        fragments.append((base_style, text[position:]))
+    if not fragments:
+        fragments.append((base_style, text))
+    return fragments
+
+
+def _format_repl_output(text: str) -> list[tuple[str, str]]:
+    fragments: list[tuple[str, str]] = []
+    for raw_line in text.splitlines(keepends=True):
+        newline = "\n" if raw_line.endswith("\n") else ""
+        line = raw_line[:-1] if newline else raw_line
+        stripped = line.strip()
+
+        if not stripped:
+            fragments.append(("class:text", raw_line))
+            continue
+
+        return_code_match = REPL_RETURN_CODE_PATTERN.match(stripped)
+        if line.startswith(". ") or line.startswith("> "):
+            prompt, remainder = line[:2], line[2:]
+            fragments.append(("class:echo-prompt", prompt))
+            fragments.extend(_lex_stata_line(remainder))
+        elif return_code_match:
+            fragments.append(("class:return-code", line))
+        elif REPL_OUTPUT_ERROR_PATTERN.match(stripped):
+            fragments.append(("class:error", line))
+        elif REPL_OUTPUT_WARNING_PATTERN.match(stripped):
+            fragments.append(("class:warning", line))
+        elif REPL_OUTPUT_NOTE_PATTERN.match(stripped):
+            fragments.append(("class:note", line))
+        else:
+            fragments.extend(_highlight_numbers_in_text(line))
+
+        if newline:
+            fragments.append(("class:text", newline))
+    return fragments
+
+
 def _print_repl_result(result: ExecutionResult) -> None:
     text = _sanitize_repl_output(result.output or result.error or "")
     if text:
-        print(text, end="" if text.endswith("\n") else "\n")
+        try:
+            print_formatted_text(FormattedText(_format_repl_output(text)), style=REPL_STYLE)
+        except Exception:
+            print(text, end="" if text.endswith("\n") else "\n")
 
 
 def init_workspace_command(target_dir: str) -> dict:
@@ -450,10 +687,10 @@ def init_workspace_command(target_dir: str) -> dict:
 
 
 def data_view_command(
-    session_id: Optional[str],
-    if_condition: Optional[str],
+    session_id: str | None,
+    if_condition: str | None,
     max_rows: int,
-    input_dta: Optional[str],
+    input_dta: str | None,
 ) -> dict:
     max_rows = max(1, int(max_rows))
     if input_dta:
@@ -506,9 +743,9 @@ def data_view_command(
 
 def data_export_csv_command(
     output: str,
-    input_dta: Optional[str],
-    session_id: Optional[str],
-    working_dir: Optional[str],
+    input_dta: str | None,
+    session_id: str | None,
+    working_dir: str | None,
     replace: bool,
 ) -> dict:
     output_path = os.path.abspath(os.path.expanduser(output))
@@ -559,7 +796,7 @@ def data_export_csv_command(
     }
 
 
-def _graphs_from_extra(extra: Optional[dict]) -> list[GraphArtifact]:
+def _graphs_from_extra(extra: dict | None) -> list[GraphArtifact]:
     graphs: list[GraphArtifact] = []
     if extra:
         for graph in extra.get("graphs", []) or []:
@@ -583,9 +820,9 @@ def _maybe_detect_single_session_graphs() -> list[GraphArtifact]:
 
 def run_selection_command(
     selection: str,
-    session_id: Optional[str],
-    working_dir: Optional[str],
-    timeout: Optional[int] = None,
+    session_id: str | None,
+    working_dir: str | None,
+    timeout: int | None = None,
 ) -> ExecutionResult:
     if legacy.multi_session_enabled and legacy.session_manager is not None:
         code = stata_mcp._build_selection_for_working_dir(selection, working_dir)
@@ -621,8 +858,8 @@ def run_selection_command(
 def run_file_command(
     file_path: str,
     timeout: int,
-    session_id: Optional[str],
-    working_dir: Optional[str],
+    session_id: str | None,
+    working_dir: str | None,
 ) -> ExecutionResult:
     timeout = 600 if timeout <= 0 else int(timeout)
     resolved_path, tried_paths = legacy.resolve_do_file_path(file_path)
@@ -688,7 +925,7 @@ def _print_human_result(result: ExecutionResult) -> None:
         print(result.error, file=sys.stderr)
 
 
-def repl_command(session_id: Optional[str], working_dir: Optional[str]) -> int:
+def repl_command(session_id: str | None, working_dir: str | None) -> int:
     session = _create_repl_session()
 
     while True:
@@ -784,7 +1021,7 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def main(argv: Optional[list[str]] = None) -> int:
+def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
 

@@ -5,8 +5,6 @@ for display in VS Code webview panels with clickable links and formatting.
 """
 
 import re
-import os
-import logging
 
 
 def _html_esc(text):

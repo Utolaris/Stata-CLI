@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 Stata Worker Process - Two modes for different use cases
 
@@ -21,20 +20,21 @@ Key Design Decisions:
 4. Output capture via log files for reliable output handling
 """
 
-import os
-import sys
 import io
-import re
-import time
-import queue
 import logging
+import os
 import platform
-import traceback
-import threading
-import tempfile
+import queue
+import re
 import shutil
-from typing import Optional, Dict, Any, Tuple
+import sys
+import tempfile
+import threading
+import time
+import traceback
+from dataclasses import dataclass, field
 from enum import Enum
+from typing import Any
 
 REPL_MODE = os.getenv("STATA_CLI_REPL_MODE", "").strip().lower() in {"1", "true", "yes", "on"}
 
@@ -45,10 +45,6 @@ def deduplicate_break_messages(output: str) -> str:
         return output
     # Collapse multiple break messages into one
     return re.sub(r'(--Break--\s*\n\s*r\(1\);\s*\n?)+', '--Break--\nr(1);\n', output)
-
-
-from contextlib import redirect_stdout
-from dataclasses import dataclass, field
 
 
 class WorkerState(Enum):
@@ -76,7 +72,7 @@ class CommandType(Enum):
 class WorkerCommand:
     """Command message sent to worker"""
     type: CommandType
-    payload: Dict[str, Any] = field(default_factory=dict)
+    payload: dict[str, Any] = field(default_factory=dict)
     command_id: str = ""
     timestamp: float = field(default_factory=time.time)
 
@@ -92,7 +88,7 @@ class WorkerResult:
     worker_id: str = ""
     worker_state: str = ""
     timestamp: float = field(default_factory=time.time)
-    extra: Dict[str, Any] = field(default_factory=dict)
+    extra: dict[str, Any] = field(default_factory=dict)
 
 
 class OutputCapture:
@@ -323,7 +319,6 @@ def worker_process(
     # CRITICAL: Redirect stdout to devnull immediately to prevent worker output
     # from appearing in parent process stdout (which VS Code pipes to output channel).
     # This prevents duplicate output - the SSE stream is the only output path.
-    original_stdout = sys.stdout
     sys.stdout = open(os.devnull, 'w')
 
     worker_state = WorkerState.CREATED
@@ -338,7 +333,7 @@ def worker_process(
     os.makedirs(graphs_dir, exist_ok=True)
 
     def send_result(command_id: str, status: str, output: str = "", error: str = "",
-                    execution_time: float = 0.0, extra: Dict = None):
+                    execution_time: float = 0.0, extra: dict = None):
         """Helper to send result back to main process"""
         result = WorkerResult(
             command_id=command_id,
@@ -488,7 +483,7 @@ capture log close _all
             output = ""
             if os.path.exists(temp_log_file):
                 try:
-                    with open(temp_log_file, 'r', encoding='utf-8', errors='replace') as f:
+                    with open(temp_log_file, encoding='utf-8', errors='replace') as f:
                         output = f.read()
                     logging.debug(f"execute_stata_code: Read {len(output)} chars from log file")
                 except Exception as e:
@@ -591,7 +586,7 @@ capture log close _all
 
         try:
             # Read the original do file
-            with open(file_path, 'r', encoding='utf-8', errors='replace') as f:
+            with open(file_path, encoding='utf-8', errors='replace') as f:
                 original_code = f.read()
 
             # Convert log file path to use forward slashes (works on all platforms in Stata)
@@ -629,7 +624,7 @@ capture log close _all
             # Also read the log file if it exists for complete output
             if os.path.exists(log_file):
                 try:
-                    with open(log_file, 'r', encoding='utf-8', errors='replace') as f:
+                    with open(log_file, encoding='utf-8', errors='replace') as f:
                         log_output = f.read()
                     # Use log file content as primary output (more reliable for streaming)
                     if log_output.strip():
@@ -711,7 +706,7 @@ capture log close _all
                 # Small sleep to avoid busy-waiting
                 time.sleep(0.1)
 
-            except Exception as e:
+            except Exception:
                 # Log but continue - monitor thread must stay alive for stop functionality
                 import traceback
                 traceback.print_exc()
@@ -863,8 +858,8 @@ capture log close _all
                                 error="Stata is not initialized"
                             )
                         else:
-                            import sfi
                             import numpy as np
+                            import sfi
 
                             total_obs = sfi.Data.getObsTotal()
 
@@ -916,7 +911,7 @@ capture log close _all
                                     except Exception as filter_err:
                                         try:
                                             stata.run("restore", inline=False, echo=False)
-                                        except:
+                                        except Exception:
                                             pass
                                         send_result(
                                             command_id=cmd_id,
@@ -1037,7 +1032,7 @@ capture log close _all
 # UTILITY FUNCTIONS
 # =============================================================================
 
-def find_stata_executable(stata_path: str, stata_edition: str = "mp") -> Optional[str]:
+def find_stata_executable(stata_path: str, stata_edition: str = "mp") -> str | None:
     """
     Find the Stata executable path based on OS and edition.
 

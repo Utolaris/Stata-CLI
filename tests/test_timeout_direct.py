@@ -5,6 +5,7 @@ Direct test of timeout functionality by calling run_stata_file directly
 
 import sys
 import time
+from importlib import import_module
 from pathlib import Path
 
 # Add the src directory to Python path
@@ -12,7 +13,7 @@ TESTS_DIR = Path(__file__).resolve().parent
 REPO_ROOT = TESTS_DIR.parent
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
-from stata_mcp_server import run_stata_file
+run_stata_file = import_module("stata_mcp_server").run_stata_file
 
 TEST_FILE = TESTS_DIR / "test_timeout.do"
 

@@ -145,8 +145,8 @@ async def test_notifications(
                 # Execute stata_run_file
                 logger.info("\n[4/4] Executing stata_run_file...")
                 logger.info(f"  File: {test_file}")
-                logger.info(f"  This will run for ~70 seconds (70 iterations @ 1s each)")
-                logger.info(f"  Watch for real-time notifications below:")
+                logger.info("  This will run for ~70 seconds (70 iterations @ 1s each)")
+                logger.info("  Watch for real-time notifications below:")
                 logger.info("-" * 80)
 
                 start_time = time.time()

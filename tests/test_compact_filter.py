@@ -6,9 +6,10 @@ These tests verify the output filtering logic that reduces Stata output
 for token-efficient AI consumption.
 """
 
-import sys
 import os
 import re
+import sys
+
 import pytest
 
 # Add src to path
@@ -465,7 +466,7 @@ class TestWithRealLogFile:
     def test_real_log_filtering(self):
         """Test filtering with a real Stata log file."""
         log_path = os.path.join(os.path.dirname(__file__), 'fixtures', 'test_sample.log')
-        with open(log_path, 'r') as f:
+        with open(log_path) as f:
             content = f.read()
 
         result = apply_compact_mode_filter(content, filter_command_echo=True)

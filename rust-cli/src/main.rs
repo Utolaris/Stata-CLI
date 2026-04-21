@@ -207,11 +207,12 @@ fn main() -> Result<()> {
         } => {
             let python = resolve_python(effective_cli.python.as_deref(), &repo_root.path)?;
             let mut file_cli = effective_cli.clone();
+            let resolved_path = absolutize_cli_path(path)?;
             if session_id.is_some() {
                 file_cli.session_id = session_id.clone();
             }
-            if working_dir.is_some() {
-                file_cli.working_dir = working_dir.clone();
+            if let Some(working_dir) = working_dir {
+                file_cli.working_dir = Some(absolutize_cli_path(working_dir)?);
             }
             if timeout.is_some() {
                 file_cli.timeout = *timeout;
@@ -221,7 +222,7 @@ fn main() -> Result<()> {
                 &repo_root.path,
                 &file_cli,
                 "file",
-                vec![path.as_os_str().to_os_string()],
+                vec![resolved_path.as_os_str().to_os_string()],
             )?;
             persist_stata_path_if_needed(&resolved_stata_path, &result)?;
             render_result(&result, file_cli.json, file_cli.quiet)?;
@@ -241,7 +242,7 @@ fn main() -> Result<()> {
         Commands::Repl => unreachable!("repl is handled before project-root resolution"),
         Commands::Data { command } => {
             let python = resolve_python(effective_cli.python.as_deref(), &repo_root.path)?;
-            let (backend_command, backend_args) = data_backend_invocation(command);
+            let (backend_command, backend_args) = data_backend_invocation(command)?;
             let payload = invoke_backend_json(
                 &python.path,
                 &repo_root.path,
@@ -345,6 +346,16 @@ fn normalize_repo_root(path: &Path) -> Option<PathBuf> {
         None
     }?;
     fs::canonicalize(candidate).ok()
+}
+
+fn absolutize_cli_path(path: &Path) -> Result<PathBuf> {
+    if path.is_absolute() {
+        return Ok(path.to_path_buf());
+    }
+
+    let cwd = std::env::current_dir()
+        .with_context(|| "Failed to resolve the current working directory".to_string())?;
+    Ok(cwd.join(path))
 }
 
 fn resolve_repo_root_from_executable() -> Option<PathBuf> {
@@ -753,12 +764,14 @@ fn session_args(cli: &Cli) -> Vec<OsString> {
     }
     if let Some(working_dir) = &cli.working_dir {
         args.push(OsString::from("--working-dir"));
-        args.push(working_dir.as_os_str().to_os_string());
+        let resolved_working_dir =
+            absolutize_cli_path(working_dir).unwrap_or_else(|_| working_dir.clone());
+        args.push(resolved_working_dir.as_os_str().to_os_string());
     }
     args
 }
 
-fn data_backend_invocation(command: &DataCommands) -> (&'static str, Vec<OsString>) {
+fn data_backend_invocation(command: &DataCommands) -> Result<(&'static str, Vec<OsString>)> {
     match command {
         DataCommands::View {
             session_id,
@@ -781,9 +794,9 @@ fn data_backend_invocation(command: &DataCommands) -> (&'static str, Vec<OsStrin
             }
             if let Some(input_dta) = input_dta {
                 args.push(OsString::from("--input-dta"));
-                args.push(input_dta.as_os_str().to_os_string());
+                args.push(absolutize_cli_path(input_dta)?.as_os_str().to_os_string());
             }
-            ("data", args)
+            Ok(("data", args))
         }
         DataCommands::ExportCsv {
             output,
@@ -795,11 +808,11 @@ fn data_backend_invocation(command: &DataCommands) -> (&'static str, Vec<OsStrin
             let mut args = vec![
                 OsString::from("export-csv"),
                 OsString::from("--output"),
-                output.as_os_str().to_os_string(),
+                absolutize_cli_path(output)?.as_os_str().to_os_string(),
             ];
             if let Some(input_dta) = input_dta {
                 args.push(OsString::from("--input-dta"));
-                args.push(input_dta.as_os_str().to_os_string());
+                args.push(absolutize_cli_path(input_dta)?.as_os_str().to_os_string());
             }
             if let Some(session_id) = session_id {
                 args.push(OsString::from("--session-id"));
@@ -807,12 +820,12 @@ fn data_backend_invocation(command: &DataCommands) -> (&'static str, Vec<OsStrin
             }
             if let Some(working_dir) = working_dir {
                 args.push(OsString::from("--working-dir"));
-                args.push(working_dir.as_os_str().to_os_string());
+                args.push(absolutize_cli_path(working_dir)?.as_os_str().to_os_string());
             }
             if *replace {
                 args.push(OsString::from("--replace"));
             }
-            ("data", args)
+            Ok(("data", args))
         }
     }
 }
@@ -1470,6 +1483,52 @@ mod tests {
 
         let error = resolve_python(None, &repo).unwrap_err().to_string();
         assert!(error.contains("uv sync --all-extras --python 3.11"));
+    }
+
+    #[test]
+    fn session_args_absolutizes_working_dir() {
+        let cli = Cli::parse_from(["stata-cli", "--working-dir", ".", "doctor"]);
+
+        let args = session_args(&cli);
+        let working_dir = args
+            .windows(2)
+            .find(|pair| pair[0] == "--working-dir")
+            .map(|pair| PathBuf::from(&pair[1]))
+            .unwrap();
+
+        assert_eq!(working_dir, std::env::current_dir().unwrap());
+    }
+
+    #[test]
+    fn data_backend_invocation_absolutizes_relative_paths() {
+        let cwd = std::env::current_dir().unwrap();
+        let command = DataCommands::ExportCsv {
+            output: PathBuf::from("scene/export.csv"),
+            input_dta: Some(PathBuf::from("scene/grilic.dta")),
+            session_id: Some("abc".to_string()),
+            working_dir: Some(PathBuf::from(".")),
+            replace: true,
+        };
+
+        let (_, args) = data_backend_invocation(&command).unwrap();
+        let rendered: Vec<PathBuf> = args
+            .iter()
+            .filter(|arg| !arg.to_string_lossy().starts_with("--"))
+            .map(PathBuf::from)
+            .collect();
+
+        assert!(rendered.contains(&cwd.join("scene/export.csv")));
+        assert!(rendered.contains(&cwd.join("scene/grilic.dta")));
+        assert!(rendered.contains(&cwd));
+    }
+
+    #[test]
+    fn absolutize_cli_path_uses_process_cwd_for_relative_input() {
+        let cwd = std::env::current_dir().unwrap();
+        assert_eq!(
+            absolutize_cli_path(Path::new("scene/smoke_test.do")).unwrap(),
+            cwd.join("scene/smoke_test.do")
+        );
     }
 
     #[test]

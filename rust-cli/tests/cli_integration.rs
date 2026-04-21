@@ -29,6 +29,18 @@ fn base_command() -> Command {
     command
 }
 
+fn normalize_windows_path(path: &Path) -> String {
+    let rendered = path.to_string_lossy().to_string();
+    if cfg!(windows) {
+        rendered
+            .strip_prefix(r"\\?\")
+            .unwrap_or(&rendered)
+            .to_string()
+    } else {
+        rendered
+    }
+}
+
 #[test]
 fn run_command_round_trips_through_python_backend() {
     let temp = tempdir().unwrap();
@@ -143,10 +155,7 @@ fn init_command_creates_agent_workspace_scaffold() {
     let json: Value = serde_json::from_slice(&output.stdout).unwrap();
     let resolved_target = std::fs::canonicalize(&target).unwrap();
     assert_eq!(json["status"], "success");
-    assert_eq!(
-        json["target_dir"],
-        resolved_target.to_string_lossy().as_ref()
-    );
+    assert_eq!(json["target_dir"], normalize_windows_path(&resolved_target));
     assert!(target.join("AGENTS.md").exists());
     assert!(target.join("data").is_dir());
     assert!(target.join("do").join("analysis.do").exists());
@@ -176,7 +185,7 @@ fn init_command_errors_on_existing_scaffold_file() {
     assert_eq!(json["status"], "error");
     assert_eq!(
         json["conflicts"][0],
-        expected_conflict.to_string_lossy().as_ref()
+        normalize_windows_path(&expected_conflict)
     );
 }
 

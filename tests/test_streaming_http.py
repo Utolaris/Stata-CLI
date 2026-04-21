@@ -105,7 +105,7 @@ def test_streaming():
     print("-" * 80)
     print("SUMMARY:")
     print("-" * 80)
-    print(f"✅ Test completed successfully!")
+    print("✅ Test completed successfully!")
     print(f"   Total time: {elapsed:.1f} seconds ({elapsed/60:.1f} minutes)")
     print(f"   Messages received: {message_count}")
     print(f"   Average message interval: {elapsed/message_count if message_count > 0 else 0:.1f}s")

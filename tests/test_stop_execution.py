@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 Regression Tests for Stop Execution Fixes
 
@@ -15,21 +14,16 @@ Or: pytest tests/test_stop_execution.py -v
 
 import os
 import sys
-import time
-import queue
-import unittest
 import threading
-import multiprocessing
+import time
+import unittest
 
 # Add src to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
 from session_manager import (
     SessionManager,
-    SessionState,
-    init_session_manager,
 )
-from stata_worker import WorkerState, CommandType
 
 # Configuration
 STATA_PATH = os.environ.get('STATA_PATH', '/Applications/StataNow')
@@ -252,6 +246,7 @@ class TestStopEventClearing(unittest.TestCase):
         This is a static analysis test - checks the source code.
         """
         import inspect
+
         from stata_worker import worker_process
 
         source = inspect.getsource(worker_process)

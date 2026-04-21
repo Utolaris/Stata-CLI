@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 Output Filtering Module for Stata MCP Server
 
@@ -14,12 +13,11 @@ Key features:
 - Break message deduplication
 """
 
+import logging
 import os
 import re
-import time
 import tempfile
-import logging
-from typing import Tuple, Optional
+import time
 
 
 def deduplicate_break_messages(output: str) -> str:
@@ -322,9 +320,9 @@ def apply_compact_mode_filter(output: str, filter_command_echo: bool = False) ->
 def check_token_limit_and_save(
     output: str,
     max_output_tokens: int,
-    extension_path: Optional[str] = None,
-    original_log_path: Optional[str] = None
-) -> Tuple[str, bool]:
+    extension_path: str | None = None,
+    original_log_path: str | None = None
+) -> tuple[str, bool]:
     """Check if output exceeds token limit and save to file if needed.
 
     Args:
@@ -365,7 +363,7 @@ def check_token_limit_and_save(
                     f.write('test')
                 os.unlink(test_file)
                 logs_dir = candidate
-            except (OSError, IOError):
+            except OSError:
                 logging.debug(f"Cannot use extension logs dir: {candidate}")
 
         # Fall back to temp directory
@@ -375,7 +373,7 @@ def check_token_limit_and_save(
             try:
                 os.makedirs(candidate, exist_ok=True)
                 logs_dir = candidate
-            except (OSError, IOError):
+            except OSError:
                 logging.debug(f"Cannot use temp logs dir: {candidate}")
 
         # Last resort: current directory
@@ -424,8 +422,8 @@ def process_mcp_output(
     output: str,
     result_display_mode: str = 'full',
     max_output_tokens: int = 0,
-    extension_path: Optional[str] = None,
-    log_path: Optional[str] = None,
+    extension_path: str | None = None,
+    log_path: str | None = None,
     for_mcp: bool = True,
     filter_command_echo: bool = False
 ) -> str:

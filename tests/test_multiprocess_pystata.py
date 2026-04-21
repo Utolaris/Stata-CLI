@@ -4,10 +4,11 @@ Test multiprocessing with PyStata - each worker gets its own Stata instance
 """
 
 import multiprocessing
-import sys
 import os
-import time
 import queue
+import sys
+import time
+
 
 def worker_process(worker_id, command_queue, result_queue, stata_path):
     """Worker process that initializes its own PyStata instance"""
@@ -123,7 +124,7 @@ def main():
         r2 = result_queue2.get(timeout=10)
         elapsed = time.time() - start
         print(f"Both workers completed in {elapsed:.1f} seconds")
-        print(f"  (Should be ~2 seconds if parallel, ~4 seconds if serial)")
+        print("  (Should be ~2 seconds if parallel, ~4 seconds if serial)")
     except queue.Empty:
         print("Timeout")
 

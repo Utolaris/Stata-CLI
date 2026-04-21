@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 Unit tests for the local Python backend used by the Rust CLI.
 """
@@ -7,8 +6,8 @@ Unit tests for the local Python backend used by the Rust CLI.
 import tempfile
 from pathlib import Path
 
-from api_models import GraphArtifact
 import stata_cli_backend as backend
+from api_models import GraphArtifact
 
 
 def test_run_selection_command_single_session(monkeypatch):
@@ -255,11 +254,44 @@ def test_init_workspace_command_errors_on_existing_scaffold_file(tmp_path):
 def test_lex_stata_line_highlights_basic_tokens():
     fragments = backend._lex_stata_line('regress y x1 if x1 >= 1 // note')
 
-    assert ("class:keyword", "regress") in fragments
+    assert ("class:command", "regress") in fragments
     assert ("class:keyword", "if") in fragments
     assert ("class:operator", ">=") in fragments
     assert ("class:number", "1") in fragments
     assert ("class:comment", "// note") in fragments
+
+
+def test_lex_stata_line_highlights_extended_stata_categories():
+    fragments = backend._lex_stata_line(
+        "reghdfe wage i.industry##c.age if missing(wage) | _rc > 0 local cutoff = c(level)"
+    )
+
+    assert ("class:addon-command", "reghdfe") in fragments
+    assert ("class:factor", "i") in fragments
+    assert ("class:factor", "c") in fragments
+    assert ("class:function", "missing") in fragments
+    assert ("class:builtin-variable", "_rc") in fragments
+    assert ("class:macro-command", "local") in fragments
+    assert ("class:result-class", "c") in fragments
+
+
+def test_format_repl_output_classifies_echo_numbers_notes_and_errors():
+    fragments = backend._format_repl_output(
+        ". display 2+3\n"
+        "5\n"
+        "note: dataset has changed since last save\n"
+        "warning: file will be replaced\n"
+        "invalid syntax\n"
+        "r(198);\n"
+    )
+
+    assert ("class:echo-prompt", ". ") in fragments
+    assert ("class:command", "display") in fragments
+    assert ("class:result-number", "5") in fragments
+    assert ("class:note", "note: dataset has changed since last save") in fragments
+    assert ("class:warning", "warning: file will be replaced") in fragments
+    assert ("class:error", "invalid syntax") in fragments
+    assert ("class:return-code", "r(198);") in fragments
 
 
 def test_print_repl_result_omits_graph_and_log_metadata(capsys):
@@ -275,7 +307,7 @@ def test_print_repl_result_omits_graph_and_log_metadata(capsys):
     backend._print_repl_result(result)
 
     captured = capsys.readouterr()
-    assert captured.out == "regression output\n"
+    assert "regression output" in captured.out
     assert captured.err == ""
 
 

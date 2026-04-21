@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 Session Manager - Manages multiple Stata worker processes for parallel sessions
 
@@ -21,31 +20,30 @@ Architecture:
         └── Session "xyz789" (Worker 2) - created on demand
 """
 
+from __future__ import annotations
+
+import importlib
+import logging
+import multiprocessing
 import os
+import queue
 import sys
+import threading
 import time
 import uuid
-import queue
-import logging
-import threading
-import multiprocessing
-from typing import Optional, Dict, Any, List
 from dataclasses import dataclass, field
-from enum import Enum
 from datetime import datetime
+from enum import Enum
+from typing import Any
 
 # Add the script's directory to Python path for stata_worker import
 _script_dir = os.path.dirname(os.path.abspath(__file__))
 if _script_dir not in sys.path:
     sys.path.insert(0, _script_dir)
 
-from stata_worker import (
-    worker_process,
-    WorkerState,
-    CommandType,
-    WorkerCommand,
-    WorkerResult
-)
+_stata_worker = importlib.import_module("stata_worker")
+CommandType = _stata_worker.CommandType
+worker_process = _stata_worker.worker_process
 
 
 def join_stata_line_continuations(code: str) -> str:
@@ -97,18 +95,18 @@ class SessionState(Enum):
 class Session:
     """Represents a Stata session with its worker process"""
     session_id: str
-    process: Optional[multiprocessing.Process] = None
-    command_queue: Optional[multiprocessing.Queue] = None
-    result_queue: Optional[multiprocessing.Queue] = None
-    stop_event: Optional[multiprocessing.Event] = None  # For signaling stop without queue race
+    process: multiprocessing.Process | None = None
+    command_queue: multiprocessing.Queue | None = None
+    result_queue: multiprocessing.Queue | None = None
+    stop_event: multiprocessing.Event | None = None  # For signaling stop without queue race
     state: SessionState = SessionState.CREATING
     created_at: float = field(default_factory=time.time)
     last_activity: float = field(default_factory=time.time)
-    current_command_id: Optional[str] = None
+    current_command_id: str | None = None
     error_message: str = ""
     is_default: bool = False
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert session to dictionary for API responses"""
         return {
             "session_id": self.session_id,
@@ -165,9 +163,9 @@ class SessionManager:
         self.enabled = enabled
         self.graphs_dir = graphs_dir
 
-        self._sessions: Dict[str, Session] = {}
+        self._sessions: dict[str, Session] = {}
         self._lock = threading.RLock()
-        self._cleanup_thread: Optional[threading.Thread] = None
+        self._cleanup_thread: threading.Thread | None = None
         self._shutdown = False
 
         # Set spawn method for clean process isolation (required for PyStata)
@@ -239,7 +237,7 @@ class SessionManager:
 
         self._logger.info("Session manager stopped")
 
-    def create_session(self, session_id: Optional[str] = None) -> Dict[str, Any]:
+    def create_session(self, session_id: str | None = None) -> dict[str, Any]:
         """
         Create a new session.
 
@@ -397,7 +395,7 @@ class SessionManager:
         self._logger.info(f"Session {session_id} destroyed")
         return True, ""
 
-    def restart_default_session(self) -> Dict[str, Any]:
+    def restart_default_session(self) -> dict[str, Any]:
         """
         Restart the default session by destroying and recreating it.
         This gives users a clean Stata state, equivalent to closing and reopening Stata.
@@ -413,7 +411,7 @@ class SessionManager:
         old_session = None
         old_queues = []
         with self._lock:
-            for sid, session in self._sessions.items():
+            for _sid, session in self._sessions.items():
                 if session.is_default:
                     old_session = session
                     break
@@ -516,7 +514,7 @@ class SessionManager:
         except Exception as e:
             self._logger.error(f"Error terminating worker: {e}")
 
-    def get_session(self, session_id: Optional[str] = None) -> Optional[Session]:
+    def get_session(self, session_id: str | None = None) -> Session | None:
         """
         Get a session by ID, or the default session if no ID provided.
 
@@ -559,7 +557,7 @@ class SessionManager:
 
         return False
 
-    def list_sessions(self) -> List[Dict[str, Any]]:
+    def list_sessions(self) -> list[dict[str, Any]]:
         """
         List all active sessions.
 
@@ -576,9 +574,9 @@ class SessionManager:
     def execute(
         self,
         code: str,
-        session_id: Optional[str] = None,
-        timeout: Optional[float] = None
-    ) -> Dict[str, Any]:
+        session_id: str | None = None,
+        timeout: float | None = None
+    ) -> dict[str, Any]:
         """
         Execute Stata code in a session.
 
@@ -649,11 +647,11 @@ class SessionManager:
     def execute_file(
         self,
         file_path: str,
-        session_id: Optional[str] = None,
-        timeout: Optional[float] = None,
-        log_file: Optional[str] = None,
-        working_dir: Optional[str] = None
-    ) -> Dict[str, Any]:
+        session_id: str | None = None,
+        timeout: float | None = None,
+        log_file: str | None = None,
+        working_dir: str | None = None
+    ) -> dict[str, Any]:
         """
         Execute a .do file in a session.
 
@@ -736,11 +734,11 @@ class SessionManager:
 
     def get_data(
         self,
-        session_id: Optional[str] = None,
-        if_condition: Optional[str] = None,
+        session_id: str | None = None,
+        if_condition: str | None = None,
         max_rows: int = 10000,
-        timeout: Optional[float] = None
-    ) -> Dict[str, Any]:
+        timeout: float | None = None
+    ) -> dict[str, Any]:
         """
         Get current dataset from a session as a dictionary.
 
@@ -790,7 +788,7 @@ class SessionManager:
             }
         return result
 
-    def stop_execution(self, session_id: Optional[str] = None) -> Dict[str, Any]:
+    def stop_execution(self, session_id: str | None = None) -> dict[str, Any]:
         """
         Stop execution in a session using the stop_event for immediate signaling.
 
@@ -837,9 +835,9 @@ class SessionManager:
         self,
         session: Session,
         command_type: CommandType,
-        payload: Dict[str, Any],
+        payload: dict[str, Any],
         timeout: float
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Execute a command in a session's worker.
 
@@ -995,7 +993,7 @@ class SessionManager:
             )
             return max(0, self.max_sessions - active_count)
 
-    def get_stats(self) -> Dict[str, Any]:
+    def get_stats(self) -> dict[str, Any]:
         """Get session manager statistics"""
         with self._lock:
             sessions = list(self._sessions.values())
@@ -1012,10 +1010,10 @@ class SessionManager:
 
 
 # Singleton instance for the server
-_session_manager: Optional[SessionManager] = None
+_session_manager: SessionManager | None = None
 
 
-def get_session_manager() -> Optional[SessionManager]:
+def get_session_manager() -> SessionManager | None:
     """Get the global session manager instance"""
     return _session_manager
 

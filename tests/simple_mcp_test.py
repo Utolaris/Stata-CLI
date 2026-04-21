@@ -3,7 +3,6 @@
 Simple test to check if MCP server responds properly
 """
 
-import json
 from pathlib import Path
 
 import requests

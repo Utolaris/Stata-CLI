@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 Tests for the native stdio MCP entrypoint.
 """
@@ -9,13 +8,11 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-import anyio
 import pytest
 from mcp import ClientSession
 from mcp.client.stdio import StdioServerParameters, stdio_client
 
 from stata_mcp import parse_runtime_config
-
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 

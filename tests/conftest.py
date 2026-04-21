@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 Pytest Configuration and Shared Fixtures
 
@@ -9,9 +8,10 @@ Fixtures are organized by category: configuration, mocking, and integration.
 
 import os
 import sys
-import pytest
-from typing import Generator, Optional
+from collections.abc import Generator
 from unittest.mock import MagicMock, patch
+
+import pytest
 
 # Add src to path for imports
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))

@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 Native stdio MCP entrypoint for stata-mcp.
 
@@ -18,10 +17,9 @@ import logging
 import os
 import sys
 import tempfile
-import threading
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 try:
     import tomllib
@@ -39,7 +37,6 @@ from api_models import (
 )
 from session_manager import SessionManager
 
-
 DEFAULT_CONFIG_FILES = (
     ".stata-mcp.toml",
     ".stata-mcp.json",
@@ -48,7 +45,7 @@ DEFAULT_CONFIG_FILES = (
 
 @dataclass
 class RuntimeConfig:
-    stata_path: Optional[str]
+    stata_path: str | None
     stata_edition: str
     log_level: str
     log_file: str
@@ -72,7 +69,7 @@ def _parse_bool(value: Any, default: bool) -> bool:
     return default
 
 
-def _load_config_file(path: Optional[str]) -> dict[str, Any]:
+def _load_config_file(path: str | None) -> dict[str, Any]:
     if not path:
         return {}
     config_path = Path(path).expanduser()
@@ -90,7 +87,7 @@ def _load_config_file(path: Optional[str]) -> dict[str, Any]:
     return data
 
 
-def _discover_config_file(explicit_path: Optional[str]) -> Optional[str]:
+def _discover_config_file(explicit_path: str | None) -> str | None:
     if explicit_path:
         return explicit_path
     for candidate in DEFAULT_CONFIG_FILES:
@@ -118,7 +115,7 @@ def _detect_default_stata_path() -> str:
     return "/usr/local/stata"
 
 
-def parse_runtime_config(argv: Optional[list[str]] = None) -> RuntimeConfig:
+def parse_runtime_config(argv: list[str] | None = None) -> RuntimeConfig:
     parser = argparse.ArgumentParser(description="Run the standalone stata-mcp stdio server")
     parser.add_argument("--config", help="Optional TOML or JSON config file")
     parser.add_argument("--stata-path", help="Path to the Stata installation directory")
@@ -226,7 +223,7 @@ def initialize_runtime(config: RuntimeConfig) -> None:
             raise RuntimeError(f"Failed to initialize Stata from {stata_path}")
 
 
-def _graphs_from_extra(extra: Optional[dict[str, Any]]) -> list[GraphArtifact]:
+def _graphs_from_extra(extra: dict[str, Any] | None) -> list[GraphArtifact]:
     graphs = []
     if extra:
         for graph in extra.get("graphs", []) or []:
@@ -238,10 +235,10 @@ def _structured_result(
     *,
     status: str,
     output: str = "",
-    session_id: Optional[str] = None,
-    log_file: Optional[str] = None,
-    error: Optional[str] = None,
-    graphs: Optional[list[GraphArtifact]] = None,
+    session_id: str | None = None,
+    log_file: str | None = None,
+    error: str | None = None,
+    graphs: list[GraphArtifact] | None = None,
 ) -> ExecutionResult:
     return ExecutionResult(
         status=status,
@@ -253,7 +250,7 @@ def _structured_result(
     )
 
 
-def _build_selection_for_working_dir(selection: str, working_dir: Optional[str]) -> str:
+def _build_selection_for_working_dir(selection: str, working_dir: str | None) -> str:
     processed = legacy.join_stata_line_continuations(selection)
     if working_dir and os.path.isdir(working_dir):
         wd = os.path.normpath(working_dir).replace("\\", "/")
@@ -261,7 +258,7 @@ def _build_selection_for_working_dir(selection: str, working_dir: Optional[str])
     return processed
 
 
-async def _notify_progress(ctx: Optional[Context], *, progress: float, total: Optional[float], message: str) -> None:
+async def _notify_progress(ctx: Context | None, *, progress: float, total: float | None, message: str) -> None:
     if not ctx:
         return
     ctx.info(message)
@@ -273,9 +270,9 @@ async def _run_file_with_progress(
     *,
     file_path: str,
     timeout: int,
-    session_id: Optional[str],
-    working_dir: Optional[str],
-    ctx: Optional[Context],
+    session_id: str | None,
+    working_dir: str | None,
+    ctx: Context | None,
 ) -> ExecutionResult:
     resolved_path, tried_paths = legacy.resolve_do_file_path(file_path)
     effective_path = resolved_path or os.path.abspath(file_path)
@@ -338,7 +335,7 @@ async def _run_file_with_progress(
         message = f"{os.path.basename(effective_path)} running for {elapsed:.0f}s"
         if os.path.exists(log_file):
             try:
-                with open(log_file, "r", encoding="utf-8", errors="replace") as handle:
+                with open(log_file, encoding="utf-8", errors="replace") as handle:
                     handle.seek(last_offset)
                     new_content = handle.read()
                     last_offset = handle.tell()
@@ -395,9 +392,9 @@ def build_mcp_server() -> FastMCP:
     @server.tool(name="stata_run_selection", description="Execute Stata code and return structured output.", structured_output=True)
     async def stata_run_selection(
         selection: str,
-        session_id: Optional[str] = None,
-        working_dir: Optional[str] = None,
-        ctx: Optional[Context] = None,
+        session_id: str | None = None,
+        working_dir: str | None = None,
+        ctx: Context | None = None,
     ) -> ExecutionResult:
         await _notify_progress(ctx, progress=0.0, total=None, message="Running Stata selection")
 
@@ -433,9 +430,9 @@ def build_mcp_server() -> FastMCP:
     async def stata_run_file(
         file_path: str,
         timeout: int = 600,
-        session_id: Optional[str] = None,
-        working_dir: Optional[str] = None,
-        ctx: Optional[Context] = None,
+        session_id: str | None = None,
+        working_dir: str | None = None,
+        ctx: Context | None = None,
     ) -> ExecutionResult:
         timeout = 600 if timeout <= 0 else int(timeout)
         return await _run_file_with_progress(
@@ -459,7 +456,7 @@ def build_mcp_server() -> FastMCP:
         )
 
     @server.tool(name="stata_create_session", description="Create a new session for parallel execution.", structured_output=True)
-    async def stata_create_session(session_id: Optional[str] = None) -> dict[str, Any]:
+    async def stata_create_session(session_id: str | None = None) -> dict[str, Any]:
         if not legacy.multi_session_enabled or legacy.session_manager is None:
             return {"status": "error", "message": "Multi-session mode is not enabled"}
         return legacy.session_manager.create_session(session_id)
@@ -481,7 +478,7 @@ def build_mcp_server() -> FastMCP:
         return {"status": "success" if success else "error", "message": error or f"Session {session_id} destroyed"}
 
     @server.tool(name="stata_stop_execution", description="Stop the currently running Stata execution.", structured_output=True)
-    async def stata_stop_execution(session_id: Optional[str] = None) -> dict[str, Any]:
+    async def stata_stop_execution(session_id: str | None = None) -> dict[str, Any]:
         return await legacy.stop_execution(session_id=session_id)
 
     @server.tool(name="stata_execution_status", description="Get the current execution status.", structured_output=True)
@@ -503,7 +500,7 @@ def _shutdown_runtime() -> None:
             logging.debug("Error while stopping session manager: %s", exc)
 
 
-def main(argv: Optional[list[str]] = None) -> None:
+def main(argv: list[str] | None = None) -> None:
     config = parse_runtime_config(argv)
     initialize_runtime(config)
     server = build_mcp_server()

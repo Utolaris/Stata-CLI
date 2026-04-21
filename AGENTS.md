@@ -1,51 +1,52 @@
-# Project Rules for stata-mcp
+# AGENTS.md
 
-## Server Restart Protocol
+## Purpose
 
-**CRITICAL: Never use `pkill -f stata_mcp_server.py` directly!**
+`stata-cli` is a local Stata CLI project with:
 
-The MCP server runs on port 4000. Killing the server process incorrectly can terminate the current Codex session since Codex also connects to port 4000.
+- a Rust frontend CLI in `rust-cli/`
+- a Python backend and MCP implementation in `src/`
+- automated tests in `tests/`
+- repo-local binaries in `bin/`
+- a real test scene in `scene/`
 
-### To restart the MCP server:
+## Project Structure
 
-Always use the restart script:
-```bash
-./scripts/restart_server.sh
+```text
+.
+├── AGENTS.md                # Project guidance for coding agents
+├── README.md                # User-facing project documentation
+├── pyproject.toml           # Python package, Ruff, pytest, mypy config
+├── uv.lock                  # Python lockfile
+├── bin/                     # Repo-local built CLI binaries
+├── dist/                    # Release artifacts
+├── logs/                    # Runtime logs and sample outputs
+├── rust-cli/                # Rust wrapper CLI crate
+│   ├── Cargo.toml
+│   ├── build.rs
+│   ├── src/main.rs
+│   └── tests/
+├── scene/                   # Real local smoke-test scene
+│   └── grilic.dta
+├── scripts/                 # Helper scripts for local maintenance
+├── skills/                  # Codex skill content
+├── src/                     # Python backend, worker, MCP server, parsing/filtering
+│   ├── api_models.py
+│   ├── output_filter.py
+│   ├── session_manager.py
+│   ├── smcl_parser.py
+│   ├── stata_cli_backend.py
+│   ├── stata_mcp.py
+│   ├── stata_mcp_server.py
+│   ├── stata_worker.py
+│   └── utils.py
+└── tests/                   # Python tests, fixtures, and integration helpers
 ```
 
-This script:
-1. Auto-detects VS Code, Cursor, or Antigravity extension directory
-2. Copies updated source files to the installed extension
-3. Sends graceful SIGTERM (not SIGKILL) to stop the server
-4. Starts the server with correct settings
-5. Verifies the server is running
+## Working Rules
 
-### After modifying Python source files:
-
-1. Run the restart script: `./scripts/restart_server.sh`
-2. Test the server: `curl -s http://localhost:4000/health`
-3. Recompile VSIX if needed: `npm run compile && vsce package`
-
-## Package Building
-
-When building the VSIX package:
-1. Ensure all new Python modules are listed in `.vscodeignore` whitelist:
-   - `!src/stata_mcp_server.py`
-   - `!src/session_manager.py`
-   - `!src/stata_worker.py`
-   - `!src/api_models.py`
-   - `!src/output_filter.py`
-   - `!src/utils.py`
-2. Run `npm run compile` to build TypeScript
-3. Run `vsce package` to create the VSIX
-4. Verify contents with `unzip -l stata-mcp-*.vsix | grep src/`
-
-## Testing
-
-- Unit tests: `python3 -m pytest tests/test_compact_filter.py -v`
-- Server health: `curl -s http://localhost:4000/health`
-- MCP tools: `curl -s -X POST http://localhost:4000/v1/tools -H "Content-Type: application/json" -d '{"tool": "stata_run_selection", "parameters": {"selection": "display 1+1"}}'`
-
-## IDE Compatibility
-
-The extension works with VS Code, Cursor, and Antigravity IDE. The restart script auto-detects which one is installed.
+- Use Python 3.11 from the repo `.venv`.
+- Keep the Rust binary in `bin/` so repo-root discovery continues to work.
+- Prefer non-destructive verification first: `ruff check .`, `cargo fmt --check`, `cargo test`.
+- Real CLI smoke tests should run from `scene/` and use `scene/grilic.dta`.
+- When changing the REPL or CLI contract, verify both Python backend tests and Rust CLI tests.
