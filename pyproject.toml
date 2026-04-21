@@ -1,14 +1,14 @@
 [project]
 name = "stata-cli"
-version = "0.0.2"
-description = "A Stata CLI for AI agents, built from the original stata-mcp project without requiring VS Code"
+version = "0.1.2"
+description = "A Stata CLI for AI agents"
 readme = "README.md"
 requires-python = ">=3.11,<3.12"
 license = {text = "MIT"}
 authors = [
     {name = "Utolaris"}
 ]
-keywords = ["stata", "cli", "ai", "codex"]
+keywords = ["stata", "cli", "ai", "codex", "claude code"]
 
 dependencies = [
     "fastapi>=0.119.0",
