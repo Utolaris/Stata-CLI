@@ -24,8 +24,10 @@ if os.getenv("STATA_CLI_REPL_MODE", "").strip().lower() in {"1", "true", "yes", 
     logging.basicConfig(level=logging.ERROR, force=True)
 
 from prompt_toolkit import PromptSession, print_formatted_text
+from prompt_toolkit.buffer import Buffer
 from prompt_toolkit.formatted_text import FormattedText
 from prompt_toolkit.history import FileHistory
+from prompt_toolkit.key_binding import KeyBindings
 from prompt_toolkit.lexers import Lexer
 from prompt_toolkit.styles import Style
 
@@ -482,56 +484,119 @@ def _is_factor_prefix(token: str, next_token: str | None) -> bool:
     return next_token == "." and bool(REPL_FACTOR_PREFIX_PATTERN.fullmatch(token))
 
 
+def _style_repl_token(token: str, next_token: str | None) -> str:
+    lower = token.lower()
+    if token.isspace():
+        return "class:text"
+    if (
+        token.startswith("///")
+        or token.startswith("//")
+        or (token.startswith("/*") and token.endswith("*/"))
+    ):
+        return "class:comment"
+    if (
+        token.startswith('"') and token.endswith('"')
+        or token.startswith('`"') and token.endswith('"\'')
+    ):
+        return "class:string"
+    if token.startswith("`") or token.startswith("$"):
+        return "class:macro"
+    if lower in REPL_MACRO_COMMANDS:
+        return "class:macro-command"
+    if lower in REPL_CONTROL_KEYWORDS:
+        return "class:keyword"
+    if lower in REPL_ADDON_COMMANDS:
+        return "class:addon-command"
+    if lower in REPL_COMMANDS:
+        return "class:command"
+    if lower in REPL_BUILTIN_VARIABLES:
+        return "class:builtin-variable"
+    if _is_factor_prefix(lower, next_token):
+        return "class:factor"
+    if lower in REPL_RESULT_CLASSES and next_token == "(":
+        return "class:result-class"
+    if lower in REPL_BUILTIN_FUNCTIONS and next_token == "(":
+        return "class:function"
+    if token in REPL_OPERATORS:
+        return "class:operator"
+    if _is_number_token(token):
+        return "class:number"
+    return "class:text"
+
+
 def _lex_stata_line(line: str) -> list[tuple[str, str]]:
     stripped = line.lstrip()
     if stripped.startswith("*"):
         return [("class:comment", line)]
 
-    tokens = REPL_TOKEN_PATTERN.findall(line)
+    matches = list(REPL_TOKEN_PATTERN.finditer(line))
+    if not matches:
+        return [("class:text", line)]
+
+    tokens = [match.group(0) for match in matches]
     fragments: list[tuple[str, str]] = []
-    for index, token in enumerate(tokens):
-        lower = token.lower()
+    cursor = 0
+    for index, match in enumerate(matches):
+        start, end = match.span()
+        if start > cursor:
+            fragments.append(("class:text", line[cursor:start]))
+        token = match.group(0)
         next_token = _next_non_whitespace_token(tokens, index + 1)
-        if not token:
-            continue
-        if token.isspace():
-            fragments.append(("class:text", token))
-        elif (
-            token.startswith("///")
-            or token.startswith("//")
-            or (token.startswith("/*") and token.endswith("*/"))
-        ):
-            fragments.append(("class:comment", token))
-        elif (
-            token.startswith('"') and token.endswith('"')
-            or token.startswith('`"') and token.endswith('"\'')
-        ):
-            fragments.append(("class:string", token))
-        elif token.startswith("`") or token.startswith("$"):
-            fragments.append(("class:macro", token))
-        elif lower in REPL_MACRO_COMMANDS:
-            fragments.append(("class:macro-command", token))
-        elif lower in REPL_CONTROL_KEYWORDS:
-            fragments.append(("class:keyword", token))
-        elif lower in REPL_ADDON_COMMANDS:
-            fragments.append(("class:addon-command", token))
-        elif lower in REPL_COMMANDS:
-            fragments.append(("class:command", token))
-        elif lower in REPL_BUILTIN_VARIABLES:
-            fragments.append(("class:builtin-variable", token))
-        elif _is_factor_prefix(lower, next_token):
-            fragments.append(("class:factor", token))
-        elif lower in REPL_RESULT_CLASSES and next_token == "(":
-            fragments.append(("class:result-class", token))
-        elif lower in REPL_BUILTIN_FUNCTIONS and next_token == "(":
-            fragments.append(("class:function", token))
-        elif token in REPL_OPERATORS:
-            fragments.append(("class:operator", token))
-        elif _is_number_token(token):
-            fragments.append(("class:number", token))
-        else:
-            fragments.append(("class:text", token))
+        fragments.append((_style_repl_token(token, next_token), token))
+        cursor = end
+
+    if cursor < len(line):
+        fragments.append(("class:text", line[cursor:]))
     return fragments
+
+
+def _delete_before_cursor_if_possible(buffer: Buffer) -> None:
+    if buffer.selection_state is not None:
+        buffer.cut_selection()
+        return
+    if buffer.cursor_position > 0:
+        buffer.delete_before_cursor(count=1)
+
+
+def _delete_under_cursor_if_possible(buffer: Buffer) -> None:
+    if buffer.selection_state is not None:
+        buffer.cut_selection()
+        return
+    if buffer.cursor_position < len(buffer.text):
+        buffer.delete(count=1)
+
+
+def _move_cursor_left_if_possible(buffer: Buffer) -> None:
+    if buffer.cursor_position > 0:
+        buffer.cursor_position -= 1
+
+
+def _move_cursor_to_start(buffer: Buffer) -> None:
+    buffer.cursor_position = 0
+
+
+def _create_repl_key_bindings() -> KeyBindings:
+    bindings = KeyBindings()
+
+    @bindings.add("backspace")
+    @bindings.add("c-h")
+    def _handle_backspace(event) -> None:
+        _delete_before_cursor_if_possible(event.app.current_buffer)
+
+    @bindings.add("delete")
+    def _handle_delete(event) -> None:
+        _delete_under_cursor_if_possible(event.app.current_buffer)
+
+    @bindings.add("left")
+    def _handle_left(event) -> None:
+        _move_cursor_left_if_possible(event.app.current_buffer)
+
+    @bindings.add("home")
+    @bindings.add("c-a")
+    def _handle_home(event) -> None:
+        _move_cursor_to_start(event.app.current_buffer)
+
+    return bindings
 
 
 def _create_repl_session() -> PromptSession:
@@ -539,6 +604,7 @@ def _create_repl_session() -> PromptSession:
         lexer=StataReplLexer(),
         style=REPL_STYLE,
         history=FileHistory(str(_repl_history_path())),
+        key_bindings=_create_repl_key_bindings(),
     )
 
 

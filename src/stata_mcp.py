@@ -36,6 +36,7 @@ from api_models import (
     SessionListResult,
 )
 from session_manager import SessionManager
+from utils import default_stata_install_dir
 
 DEFAULT_CONFIG_FILES = (
     ".stata-mcp.toml",
@@ -97,22 +98,11 @@ def _discover_config_file(explicit_path: str | None) -> str | None:
 
 
 def _detect_default_stata_path() -> str:
-    if platform := sys.platform:
-        if platform == "darwin":
-            for candidate in ("/Applications/StataNow", "/Applications/Stata"):
-                if os.path.exists(candidate):
-                    return candidate
-            return "/Applications/Stata"
-        if platform.startswith("win"):
-            for candidate in (
-                r"C:\Program Files\Stata18",
-                r"C:\Program Files\Stata17",
-                r"C:\Program Files\StataNow",
-            ):
-                if os.path.exists(candidate):
-                    return candidate
-            return r"C:\Program Files\Stata18"
-    return "/usr/local/stata"
+    if sys.platform == "darwin":
+        return default_stata_install_dir("Darwin")
+    if sys.platform.startswith("win"):
+        return default_stata_install_dir("Windows")
+    return default_stata_install_dir("Linux")
 
 
 def parse_runtime_config(argv: list[str] | None = None) -> RuntimeConfig:

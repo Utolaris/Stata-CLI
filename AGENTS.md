@@ -50,3 +50,4 @@
 - Prefer non-destructive verification first: `ruff check .`, `cargo fmt --check`, `cargo test`.
 - Real CLI smoke tests should run from `scene/` and use `scene/grilic.dta`.
 - When changing the REPL or CLI contract, verify both Python backend tests and Rust CLI tests.
+- This project 需要同时适配Windows和macOS，注意路径分隔符和系统命令的差异。

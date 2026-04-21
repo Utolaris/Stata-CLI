@@ -40,7 +40,11 @@ from output_filter import (
 from smcl_parser import smcl_to_html
 
 # Import utility functions
-from utils import get_windows_path_help_message
+from utils import (
+    default_stata_install_dir,
+    find_stata_executable_path,
+    get_windows_path_help_message,
+)
 
 # Fix encoding issues on Windows for Unicode characters
 if platform.system() == 'Windows':
@@ -507,52 +511,9 @@ def get_stata_path():
     if not STATA_PATH:
         return None
 
-    # Build the actual executable path based on the platform
-    if platform.system() == "Windows":
-        # On Windows, executable is StataMP.exe or similar
-        # Try different executable names
-        for exe_name in ["StataMP-64.exe", "StataMP.exe", "StataSE-64.exe", "StataSE.exe", "Stata-64.exe", "Stata.exe"]:
-            exe_path = os.path.join(STATA_PATH, exe_name)
-            if os.path.exists(exe_path):
-                return exe_path
-
-        # If no specific executable found, use the default path with StataMP.exe
-        return os.path.join(STATA_PATH, "StataMP.exe")
-    else:
-        # On macOS, executable is StataMPC inside the app bundle
-        if platform.system() == "Darwin":  # macOS
-            # Check if STATA_PATH is the app bundle path
-            if STATA_PATH.endswith(".app"):
-                # App bundle format like /Applications/Stata/StataMC.app
-                exe_path = os.path.join(STATA_PATH, "Contents", "MacOS", "StataMP")
-                if os.path.exists(exe_path):
-                    return exe_path
-
-                # Try other Stata variants
-                for variant in ["StataSE", "Stata"]:
-                    exe_path = os.path.join(STATA_PATH, "Contents", "MacOS", variant)
-                    if os.path.exists(exe_path):
-                        return exe_path
-            else:
-                # Direct path like /Applications/Stata
-                for variant in ["StataMP", "StataSE", "Stata"]:
-                    # Check if there's an app bundle inside the directory
-                    app_path = os.path.join(STATA_PATH, f"{variant}.app")
-                    if os.path.exists(app_path):
-                        exe_path = os.path.join(app_path, "Contents", "MacOS", variant)
-                        if os.path.exists(exe_path):
-                            return exe_path
-
-                    # Also check for direct executable
-                    exe_path = os.path.join(STATA_PATH, variant)
-                    if os.path.exists(exe_path):
-                        return exe_path
-        else:
-            # Linux - executable should be inside the path directly
-            for variant in ["stata-mp", "stata-se", "stata"]:
-                exe_path = os.path.join(STATA_PATH, variant)
-                if os.path.exists(exe_path):
-                    return exe_path
+    exe_path = find_stata_executable_path(STATA_PATH, os.environ.get("STATA_EDITION", "mp"))
+    if exe_path:
+        return exe_path
 
     # If we get here, we couldn't find the executable
     logging.error(f"Could not find Stata executable in {STATA_PATH}")
@@ -4909,25 +4870,11 @@ def main():
             STATA_PATH = os.environ.get('STATA_PATH')
             if not STATA_PATH:
                 if platform.system() == 'Darwin':  # macOS
-                    STATA_PATH = '/Applications/Stata'
+                    STATA_PATH = default_stata_install_dir("Darwin")
                 elif platform.system() == 'Windows':
-                    # Try common Windows paths
-                    potential_paths = [
-                        'C:\\Program Files\\Stata18',
-                        'C:\\Program Files\\Stata17',
-                        'C:\\Program Files\\Stata16',
-                        'C:\\Program Files (x86)\\Stata18',
-                        'C:\\Program Files (x86)\\Stata17',
-                        'C:\\Program Files (x86)\\Stata16'
-                    ]
-                    for path in potential_paths:
-                        if os.path.exists(path):
-                            STATA_PATH = path
-                            break
-                    if not STATA_PATH:
-                        STATA_PATH = 'C:\\Program Files\\Stata18'  # Default if none found
+                    STATA_PATH = default_stata_install_dir("Windows")
                 else:  # Linux
-                    STATA_PATH = '/usr/local/stata'
+                    STATA_PATH = default_stata_install_dir("Linux")
 
         logging.info(f"Using Stata path: {STATA_PATH}")
         if not os.path.exists(STATA_PATH):

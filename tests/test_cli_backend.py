@@ -6,6 +6,8 @@ Unit tests for the local Python backend used by the Rust CLI.
 import tempfile
 from pathlib import Path
 
+from prompt_toolkit.buffer import Buffer
+
 import stata_cli_backend as backend
 from api_models import GraphArtifact
 
@@ -275,6 +277,16 @@ def test_lex_stata_line_highlights_extended_stata_categories():
     assert ("class:result-class", "c") in fragments
 
 
+def test_lex_stata_line_preserves_full_input_for_unfinished_or_unknown_commands():
+    line = 'ssc install reghdfe `"unterminated'
+
+    fragments = backend._lex_stata_line(line)
+
+    assert "".join(text for _, text in fragments) == line
+    assert ("class:text", "ssc") in fragments
+    assert ("class:text", '`"') in fragments
+
+
 def test_format_repl_output_classifies_echo_numbers_notes_and_errors():
     fragments = backend._format_repl_output(
         ". display 2+3\n"
@@ -354,3 +366,51 @@ def test_print_repl_result_applies_repl_sanitizer(capsys):
     assert "capture log close _all" not in captured.out
     assert ". display 2+3" in captured.out
     assert "5" in captured.out
+
+
+def test_repl_edit_guards_do_not_delete_before_buffer_start():
+    buffer = Buffer()
+
+    backend._delete_before_cursor_if_possible(buffer)
+    backend._delete_under_cursor_if_possible(buffer)
+    backend._move_cursor_left_if_possible(buffer)
+    backend._move_cursor_to_start(buffer)
+
+    assert buffer.text == ""
+    assert buffer.cursor_position == 0
+
+
+def test_repl_edit_guards_only_modify_actual_user_input():
+    buffer = Buffer()
+    buffer.insert_text("ssc")
+
+    backend._move_cursor_to_start(buffer)
+    backend._delete_before_cursor_if_possible(buffer)
+    backend._move_cursor_left_if_possible(buffer)
+    assert buffer.text == "ssc"
+    assert buffer.cursor_position == 0
+
+    backend._delete_under_cursor_if_possible(buffer)
+    assert buffer.text == "sc"
+    assert buffer.cursor_position == 0
+
+
+def test_repl_delete_helpers_preserve_selection_deletion_behavior():
+    buffer = Buffer()
+    buffer.insert_text("ssc install")
+    buffer.cursor_position = 0
+    buffer.start_selection()
+    buffer.cursor_position = len(buffer.text)
+
+    backend._delete_before_cursor_if_possible(buffer)
+    assert buffer.text == ""
+    assert buffer.selection_state is None
+
+    buffer.insert_text("ssc install")
+    buffer.cursor_position = 0
+    buffer.start_selection()
+    buffer.cursor_position = len(buffer.text)
+
+    backend._delete_under_cursor_if_possible(buffer)
+    assert buffer.text == ""
+    assert buffer.selection_state is None

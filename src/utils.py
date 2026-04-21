@@ -8,6 +8,7 @@ extracted to reduce duplication and improve maintainability.
 
 import os
 import platform
+from collections.abc import Callable
 
 
 def normalize_path_for_platform(path: str) -> str:
@@ -39,6 +40,119 @@ def normalize_path_for_platform(path: str) -> str:
         normalized = normalized.replace('/', '\\')
 
     return normalized
+
+
+def default_stata_install_dir(
+    system_name: str | None = None,
+    path_exists: Callable[[str], bool] = os.path.exists,
+) -> str:
+    """Return the best-effort default Stata install directory for the platform."""
+    system_name = system_name or platform.system()
+
+    if system_name == "Darwin":
+        candidates = [
+            "/Applications/StataNow",
+            "/Applications/Stata",
+        ]
+        fallback = "/Applications/Stata"
+    elif system_name == "Windows":
+        candidates = [
+            r"C:\Program Files\Stata18",
+            r"C:\Program Files\Stata17",
+            r"C:\Program Files\StataNow",
+            r"C:\Program Files\Stata16",
+            r"C:\Program Files (x86)\Stata18",
+            r"C:\Program Files (x86)\Stata17",
+            r"C:\Program Files (x86)\Stata16",
+        ]
+        fallback = r"C:\Program Files\Stata18"
+    else:
+        candidates = ["/usr/local/stata"]
+        fallback = "/usr/local/stata"
+
+    for candidate in candidates:
+        if path_exists(candidate):
+            return candidate
+    return fallback
+
+
+def find_stata_executable_path(
+    stata_path: str,
+    edition: str = "mp",
+    system_name: str | None = None,
+    path_exists: Callable[[str], bool] = os.path.exists,
+) -> str | None:
+    """Best-effort Stata executable resolution for Windows/macOS/Linux."""
+    if not stata_path:
+        return None
+
+    system_name = system_name or platform.system()
+    edition_lower = edition.lower()
+
+    if system_name == "Windows":
+        edition_execs = {
+            "mp": ["StataMP-64.exe", "StataMP.exe"],
+            "se": ["StataSE-64.exe", "StataSE.exe"],
+            "be": ["Stata-64.exe", "Stata.exe"],
+        }
+        exe_names = edition_execs.get(edition_lower, []) + [
+            "StataMP-64.exe",
+            "StataMP.exe",
+            "StataSE-64.exe",
+            "StataSE.exe",
+            "Stata-64.exe",
+            "Stata.exe",
+        ]
+        for exe_name in exe_names:
+            exe_path = os.path.join(stata_path, exe_name)
+            if path_exists(exe_path):
+                return exe_path
+        return None
+
+    if system_name == "Darwin":
+        executable_names = {
+            "mp": ["StataMP", "stata-mp"],
+            "se": ["StataSE", "stata-se"],
+            "be": ["Stata", "stata"],
+        }.get(edition_lower, []) + [
+            "StataMP",
+            "StataSE",
+            "Stata",
+            "stata-mp",
+            "stata-se",
+            "stata",
+        ]
+
+        if stata_path.endswith(".app"):
+            for executable_name in executable_names:
+                exe_path = os.path.join(stata_path, "Contents", "MacOS", executable_name)
+                if path_exists(exe_path):
+                    return exe_path
+            return None
+
+        for executable_name in executable_names:
+            exe_path = os.path.join(stata_path, executable_name)
+            if path_exists(exe_path):
+                return exe_path
+
+        for bundle_name in ["StataMP.app", "StataSE.app", "Stata.app"]:
+            for executable_name in executable_names:
+                exe_path = os.path.join(
+                    stata_path,
+                    bundle_name,
+                    "Contents",
+                    "MacOS",
+                    executable_name,
+                )
+                if path_exists(exe_path):
+                    return exe_path
+        return None
+
+    for executable_name in [f"stata-{edition_lower}", "stata"]:
+        exe_path = os.path.join(stata_path, executable_name)
+        if path_exists(exe_path):
+            return exe_path
+    return None
 
 
 def get_windows_path_help_message() -> str:

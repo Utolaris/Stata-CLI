@@ -36,6 +36,8 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
 
+from utils import find_stata_executable_path
+
 REPL_MODE = os.getenv("STATA_CLI_REPL_MODE", "").strip().lower() in {"1", "true", "yes", "on"}
 
 
@@ -1043,66 +1045,11 @@ def find_stata_executable(stata_path: str, stata_edition: str = "mp") -> str | N
     Returns:
         Full path to Stata executable, or None if not found
     """
-    system = platform.system()
-    edition_lower = stata_edition.lower()
-
-    if system == 'Darwin':  # macOS
-        # Try different app bundle names
-        app_names = [
-            f"Stata{edition_lower.upper()}.app",  # StataMP.app
-            f"stata-{edition_lower}",              # stata-mp (command line)
-            "Stata.app",
-        ]
-
-        for app_name in app_names:
-            if app_name.endswith('.app'):
-                # macOS app bundle
-                exe_path = os.path.join(stata_path, app_name, "Contents", "MacOS", f"stata-{edition_lower}")
-                if os.path.exists(exe_path):
-                    return exe_path
-                # Try without edition suffix
-                exe_path = os.path.join(stata_path, app_name, "Contents", "MacOS", "stata")
-                if os.path.exists(exe_path):
-                    return exe_path
-            else:
-                # Direct executable
-                exe_path = os.path.join(stata_path, app_name)
-                if os.path.exists(exe_path):
-                    return exe_path
-
-        # Fallback: look for any stata executable in the path
-        for edition in ['mp', 'se', 'be', '']:
-            suffix = f"-{edition}" if edition else ""
-            exe_path = os.path.join(stata_path, f"stata{suffix}")
-            if os.path.exists(exe_path):
-                return exe_path
-
-    elif system == 'Windows':
-        # Windows executables
-        exe_names = [
-            f"Stata{edition_lower.upper()}-64.exe",  # StataMP-64.exe
-            f"Stata{edition_lower.upper()}.exe",      # StataMP.exe
-            "Stata-64.exe",
-            "Stata.exe",
-        ]
-
-        for exe_name in exe_names:
-            exe_path = os.path.join(stata_path, exe_name)
-            if os.path.exists(exe_path):
-                return exe_path
-
-    else:  # Linux
-        exe_names = [
-            f"stata-{edition_lower}",
-            "stata",
-        ]
-
-        for exe_name in exe_names:
-            exe_path = os.path.join(stata_path, exe_name)
-            if os.path.exists(exe_path):
-                return exe_path
-
-    return None
+    return find_stata_executable_path(
+        stata_path,
+        stata_edition,
+        system_name=platform.system(),
+    )
 
 
 # For testing worker independently

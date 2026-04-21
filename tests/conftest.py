@@ -16,12 +16,11 @@ import pytest
 # Add src to path for imports
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
+from utils import default_stata_install_dir
+
 
 def _default_stata_path() -> str:
-    for candidate in ("/Applications/Stata", "/Applications/StataNow"):
-        if os.path.exists(candidate):
-            return candidate
-    return "/Applications/Stata"
+    return default_stata_install_dir(path_exists=os.path.exists)
 
 
 # =============================================================================
