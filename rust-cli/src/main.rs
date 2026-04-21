@@ -1218,6 +1218,28 @@ mod tests {
         .unwrap();
     }
 
+    fn write_mock_python(path: &Path) {
+        if cfg!(windows) {
+            fs::write(
+                path,
+                "@echo off\r\nif \"%1\"==\"-c\" (\r\n  echo 3.11\r\n) else (\r\n  echo Python 3.11.0\r\n)\r\n",
+            )
+            .unwrap();
+        } else {
+            fs::write(
+                path,
+                "#!/bin/sh\nif [ \"$1\" = \"-c\" ]; then\n  echo 3.11\nelse\n  echo Python 3.11.0\nfi\n",
+            )
+            .unwrap();
+            #[cfg(unix)]
+            {
+                let mut perms = fs::metadata(path).unwrap().permissions();
+                perms.set_mode(0o755);
+                fs::set_permissions(path, perms).unwrap();
+            }
+        }
+    }
+
     fn windows_like_cli() -> Cli {
         Cli::parse_from(["stata-cli", "doctor"])
     }
@@ -1434,37 +1456,38 @@ mod tests {
             dir.path().join("python311-mock")
         };
 
-        if cfg!(windows) {
-            fs::write(
-                &script,
-                "@echo off\r\nif \"%1\"==\"-c\" (\r\n  echo 3.11\r\n) else (\r\n  echo Python 3.11.0\r\n)\r\n",
-            )
-            .unwrap();
-        } else {
-            fs::write(
-                &script,
-                "#!/bin/sh\nif [ \"$1\" = \"-c\" ]; then\n  echo 3.11\nelse\n  echo Python 3.11.0\nfi\n",
-            )
-            .unwrap();
-            #[cfg(unix)]
-            {
-                let mut perms = fs::metadata(&script).unwrap().permissions();
-                perms.set_mode(0o755);
-                fs::set_permissions(&script, perms).unwrap();
-            }
-        }
+        write_mock_python(&script);
 
         assert_eq!(inspect_python_version(&script).unwrap(), "3.11");
     }
 
     #[test]
     fn resolve_python_uses_uv_managed_environment() {
-        let repo = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .parent()
-            .expect("rust-cli should live under the repo root");
-        let expected = project_python(repo);
+        if cfg!(windows) {
+            let repo = Path::new(env!("CARGO_MANIFEST_DIR"))
+                .parent()
+                .expect("rust-cli should live under the repo root");
+            let expected = project_python(repo);
+            if !expected.exists() {
+                return;
+            }
 
-        let resolved = resolve_python(None, repo).unwrap();
+            let resolved = resolve_python(None, repo).unwrap();
+            assert_eq!(resolved.path, expected);
+            assert_eq!(resolved.source, "project .venv");
+            assert_eq!(resolved.version, "3.11");
+            return;
+        }
+
+        let temp = tempdir().unwrap();
+        let repo = temp.path().join("repo");
+        make_repo(&repo);
+        let expected = project_python(&repo);
+        let parent = expected.parent().unwrap();
+        fs::create_dir_all(parent).unwrap();
+        write_mock_python(&expected);
+
+        let resolved = resolve_python(None, &repo).unwrap();
         assert_eq!(resolved.path, expected);
         assert_eq!(resolved.source, "project .venv");
         assert_eq!(resolved.version, "3.11");
