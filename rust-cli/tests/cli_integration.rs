@@ -22,10 +22,13 @@ fn project_python(repo_root: &Path) -> PathBuf {
 fn base_command() -> Command {
     let repo_root = repo_root();
     let python = project_python(&repo_root);
+    let fake_stata = env::temp_dir().join("stata-cli-fake-stata");
+    std::fs::create_dir_all(&fake_stata).unwrap();
     let mut command = Command::new(env!("CARGO_BIN_EXE_stata-cli"));
     command.env("STATA_CLI_PROJECT_ROOT", &repo_root);
     command.env("STATA_CLI_BACKEND_TEST_MODE", "1");
     command.arg("--python").arg(python);
+    command.arg("--stata-path").arg(fake_stata);
     command
 }
 
