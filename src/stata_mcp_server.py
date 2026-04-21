@@ -21,6 +21,7 @@ import threading
 import time
 import traceback
 import warnings
+from typing import Any, cast
 from urllib.parse import unquote
 
 # Import API models
@@ -139,7 +140,7 @@ stata_banner_displayed = False
 # Add a flag to track if MCP server is fully initialized
 mcp_initialized = False
 # Add a storage for continuous command history
-command_history = []
+command_history: list[dict[str, Any]] = []
 # Store the current Stata edition
 stata_edition = 'mp'  # Default to MP edition
 # Store log file settings
@@ -550,7 +551,7 @@ def check_stata_installed():
 # The functions are re-exported here with wrappers that use global configuration.
 
 # Wrapper that uses global config
-def _local_check_token_limit_and_save(output: str, original_log_path: str = None) -> tuple:
+def _local_check_token_limit_and_save(output: str, original_log_path: str | None = None) -> tuple:
     """Wrapper for check_token_limit_and_save that uses global config."""
     global max_output_tokens, extension_path
     return _check_token_limit_and_save(
@@ -561,7 +562,12 @@ def _local_check_token_limit_and_save(output: str, original_log_path: str = None
     )
 
 # Wrapper that uses global config
-def _local_process_mcp_output(output: str, log_path: str = None, for_mcp: bool = True, filter_command_echo: bool = False) -> str:
+def _local_process_mcp_output(
+    output: str,
+    log_path: str | None = None,
+    for_mcp: bool = True,
+    filter_command_echo: bool = False,
+) -> str:
     """Wrapper for process_mcp_output that uses global config."""
     global result_display_mode, max_output_tokens, extension_path
     return _process_mcp_output(
@@ -634,7 +640,7 @@ def preprocess_do_file_for_graphs(file_path: str) -> str:
 
         # First, join lines with Stata line continuation (///) into single logical lines
         raw_lines = do_file_content.splitlines()
-        joined_lines = []
+        joined_lines: list[str] = []
         current_line = ""
         for raw_line in raw_lines:
             stripped = raw_line.rstrip()
@@ -673,7 +679,7 @@ def preprocess_do_file_for_graphs(file_path: str) -> str:
             if graph_match:
                 indent = str(graph_match.group(1) or "")
                 graph_cmd = str(graph_match.group(2) or "")
-                rest_raw = graph_match.group(4) if graph_match.lastindex >= 4 else ""
+                rest_raw = graph_match.group(4) if (graph_match.lastindex or 0) >= 4 else ""
                 rest = str(rest_raw) if rest_raw else ""
 
                 # Check if it already has name() option
@@ -924,7 +930,7 @@ def run_stata_command(
                         break
 
                 # Extract just the middle part (the actual output)
-                result_lines = []
+                result_lines: list[str] = []
                 for i in range(start_index, end_index):
                     line = lines[i].rstrip()  # Remove trailing whitespace
 
@@ -1385,7 +1391,7 @@ def run_stata_file(
                         graph_cmd = str(graph_match.group(2) or "")
 
                         # Extract and ensure rest is a string
-                        rest_raw = graph_match.group(4) if graph_match.lastindex >= 4 else ""
+                        rest_raw = graph_match.group(4) if (graph_match.lastindex or 0) >= 4 else ""
                         if rest_raw is None:
                             rest_raw = ""
                         # Force conversion to string to handle any edge cases
@@ -1747,7 +1753,7 @@ def run_stata_file(
 
                             # Clean up log content - remove headers and Stata startup info
                             lines = log_content.splitlines()
-                            result_lines = []
+                            result_lines: list[str] = []
 
                             # Skip Stata header if present (search for the separator line)
                             start_index = 0
@@ -2042,7 +2048,11 @@ No built-in rate limiting. Stata execution is inherently sequential per session.
     summary="Run Stata code selection",
     description="Execute Stata code and return the output. Supports multi-session mode for parallel execution.",
 )
-async def stata_run_selection_endpoint(selection: str, session_id: str = None, working_dir: str = None) -> Response:
+async def stata_run_selection_endpoint(
+    selection: str,
+    session_id: str | None = None,
+    working_dir: str | None = None,
+) -> Response:
     """Run selected Stata code and return the output (MCP endpoint - applies compact mode filtering)
 
     Args:
@@ -2080,7 +2090,12 @@ async def stata_run_selection_endpoint(selection: str, session_id: str = None, w
     formatted_result = process_mcp_output(formatted_result, for_mcp=True)
     return Response(content=formatted_result, media_type="text/plain")
 
-async def stata_run_file_stream(file_path: str, timeout: int = 600, working_dir: str = None, session_id: str = None):
+async def stata_run_file_stream(
+    file_path: str,
+    timeout: int = 600,
+    working_dir: str | None = None,
+    session_id: str | None = None,
+):
     """Async generator that runs Stata file and yields SSE progress events
 
     Streams output incrementally by monitoring the log file during execution.
@@ -2099,7 +2114,7 @@ async def stata_run_file_stream(file_path: str, timeout: int = 600, working_dir:
     import threading
 
     # Queue to communicate between threads
-    result_queue = queue_module.Queue()
+    result_queue: queue_module.Queue[dict[str, Any]] = queue_module.Queue()
 
     # Determine log file path - must match what run_stata_file/worker uses
     abs_file_path = os.path.abspath(file_path)
@@ -2220,7 +2235,10 @@ async def stata_run_file_stream(file_path: str, timeout: int = 600, working_dir:
 
         # Get final result - check for any remaining content
         try:
-            status, result, graphs = result_queue.get(timeout=5.0)
+            status, result, graphs = cast(
+                tuple[str, str, list[dict[str, str]]],
+                result_queue.get(timeout=5.0),
+            )
 
             # Read any remaining log file content not yet sent
             if os.path.exists(log_file):
@@ -2272,8 +2290,8 @@ async def stata_run_file_stream(file_path: str, timeout: int = 600, working_dir:
 async def stata_run_file_endpoint(
     file_path: str,
     timeout: int = 600,
-    session_id: str = None,
-    working_dir: str = None
+    session_id: str | None = None,
+    working_dir: str | None = None
 ) -> Response:
     """Run a Stata .do file and return the output (MCP endpoint - applies compact mode filtering)
 
@@ -2357,8 +2375,8 @@ async def stata_run_file_endpoint(
 async def stata_run_file_stream_endpoint(
     file_path: str,
     timeout: int = 600,
-    working_dir: str = None,
-    session_id: str = None
+    working_dir: str | None = None,
+    session_id: str | None = None
 ):
     """Run a Stata .do file and stream the output via Server-Sent Events (SSE)
 
@@ -2401,7 +2419,12 @@ async def stata_run_file_stream_endpoint(
     )
 
 
-async def stata_run_selection_stream(selection: str, timeout: int = 600, working_dir: str = None, session_id: str = None):
+async def stata_run_selection_stream(
+    selection: str,
+    timeout: int = 600,
+    working_dir: str | None = None,
+    session_id: str | None = None,
+):
     """Async generator that runs Stata selection code and yields SSE progress events
 
     Streams output incrementally by creating a temp file and monitoring the log file during execution.
@@ -2447,7 +2470,7 @@ async def stata_run_selection_stream(selection: str, timeout: int = 600, working
     logging.info(f"[STREAM-SEL] Created temp file: {temp_file}")
 
     # Queue to communicate between threads
-    result_queue = queue_module.Queue()
+    result_queue: queue_module.Queue[dict[str, Any]] = queue_module.Queue()
 
     # Determine log file path
     base_name = os.path.splitext(os.path.basename(temp_file))[0]
@@ -2593,7 +2616,10 @@ async def stata_run_selection_stream(selection: str, timeout: int = 600, working
 
         # Get final result
         try:
-            status, result, graphs = result_queue.get(timeout=5.0)
+            status, result, graphs = cast(
+                tuple[str, str, list[dict[str, str]]],
+                result_queue.get(timeout=5.0),
+            )
 
             # Read any remaining log file content
             if os.path.exists(log_file):
@@ -2647,8 +2673,8 @@ async def stata_run_selection_stream(selection: str, timeout: int = 600, working
 async def stata_run_selection_stream_endpoint(
     selection: str,
     timeout: int = 600,
-    working_dir: str = None,
-    session_id: str = None
+    working_dir: str | None = None,
+    session_id: str | None = None
 ):
     """Run Stata code selection and stream the output via Server-Sent Events (SSE)
 
@@ -2960,7 +2986,7 @@ async def health_check():
 # Endpoint to stop a running execution
 # Hidden from OpenAPI schema so it won't be exposed to LLMs via MCP
 @app.post("/stop_execution", include_in_schema=False)
-async def stop_execution(session_id: str = None):
+async def stop_execution(session_id: str | None = None):
     """Stop the currently running Stata execution.
 
     Works with both single-session and multi-session modes.
@@ -3854,7 +3880,7 @@ else {{
         # Parse the output to extract file path and sysdir paths
         # Join continuation lines (Stata wraps long display output with '>' prefix)
         raw_lines = raw_output.split('\n')
-        joined_lines = []
+        joined_lines: list[str] = []
         for line in raw_lines:
             stripped = line.strip()
             if stripped.startswith('>') and joined_lines:
@@ -4045,7 +4071,11 @@ async def clear_history_endpoint():
         return {"status": "error", "message": str(e)}
 
 @app.get("/view_data", include_in_schema=False)
-async def view_data_endpoint(if_condition: str = None, session_id: str = None, max_rows: int = 10000):
+async def view_data_endpoint(
+    if_condition: str | None = None,
+    session_id: str | None = None,
+    max_rows: int = 10000,
+):
     """Get current Stata data as a pandas DataFrame and return as JSON
 
     Args:
@@ -4263,7 +4293,7 @@ async def view_data_endpoint(if_condition: str = None, session_id: str = None, m
         )
 
 @app.get("/interactive", include_in_schema=False)
-async def interactive_window(file: str = None, code: str = None):
+async def interactive_window(file: str | None = None, code: str | None = None):
     """Serve the interactive Stata window as a full webpage"""
     # If a file path or code is provided, we'll auto-execute it on page load
     auto_run_file = file if file else ""
@@ -5058,7 +5088,7 @@ def main():
 
         # Register call_tool handler to execute tools with HTTP server's context
         @http_mcp_server.call_tool()
-        async def call_tool_http(name: str, arguments: dict) -> list:
+        async def call_tool_http(name: str, arguments: dict[str, Any]) -> list[Any]:
             """Execute tools using HTTP server's own context for proper notification routing"""
             import mcp.types as types
 
@@ -5096,7 +5126,7 @@ def main():
                 http_request_info=None
             )
 
-            return result
+            return cast(list[Any], result)
 
         logging.debug("Registered tool handlers with HTTP server")
 

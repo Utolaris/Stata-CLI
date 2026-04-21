@@ -132,14 +132,14 @@ class OutputCapture:
 
     def get_output(self) -> str:
         """Get all captured output"""
-        return self.buffer.getvalue()
+        return str(self.buffer.getvalue())
 
     def get_and_clear(self) -> str:
         """Get output and clear buffer (for streaming)"""
         with self._lock:
             output = self.buffer.getvalue()
             self.buffer = io.StringIO()
-            return output
+            return str(output)
 
 
 def reset_graph_tracking(stlib) -> bool:
@@ -279,7 +279,7 @@ def worker_process(
     stata_edition: str = "mp",
     init_timeout: float = 60.0,
     stop_event=None,  # multiprocessing.Event for stop signaling
-    graphs_dir: str = None  # Directory to export graphs (shared with main server)
+    graphs_dir: str | None = None  # Directory to export graphs (shared with main server)
 ):
     """
     Main worker process function - runs in a separate process.
@@ -335,7 +335,7 @@ def worker_process(
     os.makedirs(graphs_dir, exist_ok=True)
 
     def send_result(command_id: str, status: str, output: str = "", error: str = "",
-                    execution_time: float = 0.0, extra: dict = None):
+                    execution_time: float = 0.0, extra: dict[str, Any] | None = None):
         """Helper to send result back to main process"""
         result = WorkerResult(
             command_id=command_id,
@@ -424,6 +424,7 @@ def worker_process(
 
     # Flag to prevent multiple SetBreak calls - declared here for visibility
     stop_already_sent = False
+    seed_confirmed: set[str] = set()
 
     def execute_stata_code(code: str, timeout: float = 600.0) -> tuple:
         """
@@ -449,13 +450,9 @@ def worker_process(
 
         # === ENSURE UNIQUE RANDOM STATE FOR THIS SESSION ===
         # Set seed only on FIRST successful execution to ensure session isolation
-        # Track whether seed has been successfully set (not just attempted)
-        if not hasattr(execute_stata_code, '_seed_confirmed'):
-            execute_stata_code._seed_confirmed = {}
-
         # Generate seed prefix if not yet confirmed for this session
         seed_prefix = ""
-        if worker_id not in execute_stata_code._seed_confirmed:
+        if worker_id not in seed_confirmed:
             import hashlib
             seed_input = f"{worker_id}_{os.getpid()}"
             # Stata requires seed < 2^31 (2147483648), so mask to 31 bits
@@ -514,8 +511,8 @@ capture log close _all
                 return False, output, "Execution cancelled", execution_time
 
             # Mark seed as confirmed after successful execution
-            if worker_id not in execute_stata_code._seed_confirmed:
-                execute_stata_code._seed_confirmed[worker_id] = True
+            if worker_id not in seed_confirmed:
+                seed_confirmed.add(worker_id)
 
             return True, output, "", execution_time
 
@@ -537,7 +534,12 @@ capture log close _all
 
             return False, "", error_str, execution_time
 
-    def execute_stata_file(file_path: str, timeout: float = 600.0, log_file: str = None, working_dir: str = None) -> tuple:
+    def execute_stata_file(
+        file_path: str,
+        timeout: float = 600.0,
+        log_file: str | None = None,
+        working_dir: str | None = None,
+    ) -> tuple:
         """
         Execute a .do file with log file support for streaming.
 
@@ -811,7 +813,7 @@ capture log close _all
                         output=output,
                         error=error,
                         execution_time=exec_time,
-                        extra={"graphs": graphs} if graphs else None
+                        extra={"graphs": graphs} if graphs else {}
                     )
 
                 elif cmd_type == CommandType.EXECUTE_FILE:
@@ -1060,8 +1062,8 @@ if __name__ == "__main__":
     multiprocessing.set_start_method('spawn', force=True)
 
     # Create test queues
-    cmd_q = multiprocessing.Queue()
-    result_q = multiprocessing.Queue()
+    cmd_q: Any = multiprocessing.Queue()
+    result_q: Any = multiprocessing.Queue()
 
     # Default Stata path for Mac
     stata_path = "/Applications/StataNow"

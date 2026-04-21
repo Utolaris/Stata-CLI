@@ -528,9 +528,8 @@ where
     if let Some(path) = &cli.stata_path {
         let candidate = PathBuf::from(path);
         validate_stata_path(&candidate).with_context(|| {
-            format!(
-                "The --stata-path value is invalid. Pass a valid Windows Stata installation directory."
-            )
+            "The --stata-path value is invalid. Pass a valid Windows Stata installation directory."
+                .to_string()
         })?;
         return Ok(ResolvedStataPath {
             path: Some(candidate),
@@ -934,12 +933,8 @@ fn render_result(result: &ExecutionResult, emit_json: bool, quiet: bool) -> Resu
     Ok(())
 }
 
-fn render_json_payload(payload: &Value, emit_json: bool) -> Result<()> {
-    if emit_json {
-        println!("{}", serde_json::to_string_pretty(payload)?);
-    } else {
-        println!("{}", serde_json::to_string_pretty(payload)?);
-    }
+fn render_json_payload(payload: &Value, _emit_json: bool) -> Result<()> {
+    println!("{}", serde_json::to_string_pretty(payload)?);
 
     let status = payload
         .get("status")

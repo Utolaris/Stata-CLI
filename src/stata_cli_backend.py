@@ -19,6 +19,7 @@ import re
 import sys
 import tempfile
 from pathlib import Path
+from typing import Any, cast
 
 if os.getenv("STATA_CLI_REPL_MODE", "").strip().lower() in {"1", "true", "yes", "on"}:
     logging.basicConfig(level=logging.ERROR, force=True)
@@ -377,7 +378,7 @@ def _is_test_mode() -> bool:
     return os.getenv(TEST_MODE_ENV, "").strip().lower() in {"1", "true", "yes", "on"}
 
 
-def _mock_result_from_args(args: argparse.Namespace) -> object:
+def _mock_result_from_args(args: argparse.Namespace) -> ExecutionResult | dict[str, Any]:
     session_id = getattr(args, "session_id", None) or SessionManager.DEFAULT_SESSION_ID
     working_dir = getattr(args, "working_dir", None) or ""
 
@@ -757,7 +758,7 @@ def data_view_command(
     if_condition: str | None,
     max_rows: int,
     input_dta: str | None,
-) -> dict:
+) -> dict[str, Any]:
     max_rows = max(1, int(max_rows))
     if input_dta:
         input_path = os.path.abspath(os.path.expanduser(input_dta))
@@ -791,7 +792,7 @@ def data_view_command(
             return _session_error(result.get("error", "Failed to get data"))
         result["status"] = "success"
         result["source_dta"] = input_dta
-        return result
+        return cast(dict[str, Any], result)
 
     response = asyncio.run(
         legacy.view_data_endpoint(
@@ -800,7 +801,7 @@ def data_view_command(
             max_rows=max_rows,
         )
     )
-    payload = json.loads(response.body.decode("utf-8"))
+    payload = cast(dict[str, Any], json.loads(response.body.decode("utf-8")))
     if payload.get("status") == "error":
         return _session_error(payload.get("message", "Failed to get data"))
     payload["source_dta"] = input_dta
@@ -813,7 +814,7 @@ def data_export_csv_command(
     session_id: str | None,
     working_dir: str | None,
     replace: bool,
-) -> dict:
+) -> dict[str, Any]:
     output_path = os.path.abspath(os.path.expanduser(output))
     output_dir = os.path.dirname(output_path)
     if output_dir:

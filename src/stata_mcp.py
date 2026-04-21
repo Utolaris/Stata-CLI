@@ -17,14 +17,10 @@ import logging
 import os
 import sys
 import tempfile
+import tomllib
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
-
-try:
-    import tomllib
-except ModuleNotFoundError:  # pragma: no cover - Python 3.10 fallback
-    import tomli as tomllib
+from typing import Any, cast
 
 from mcp.server.fastmcp import Context, FastMCP
 
@@ -251,9 +247,9 @@ def _build_selection_for_working_dir(selection: str, working_dir: str | None) ->
 async def _notify_progress(ctx: Context | None, *, progress: float, total: float | None, message: str) -> None:
     if not ctx:
         return
-    ctx.info(message)
+    await ctx.info(message)
     if total is not None:
-        ctx.report_progress(progress, total=total, message=message)
+        await ctx.report_progress(progress, total=total, message=message)
 
 
 async def _run_file_with_progress(
@@ -436,29 +432,36 @@ def build_mcp_server() -> FastMCP:
     @server.tool(name="stata_list_sessions", description="List all active Stata sessions.", structured_output=True)
     async def stata_list_sessions() -> SessionListResult:
         if not legacy.multi_session_enabled or legacy.session_manager is None:
-            return SessionListResult(status="error", sessions=[], error="Multi-session mode is not enabled")
+            return SessionListResult(
+                status="error",
+                sessions=[],
+                max_sessions=None,
+                available_slots=None,
+                error="Multi-session mode is not enabled",
+            )
         stats = legacy.session_manager.get_stats()
         return SessionListResult(
             status="success",
             sessions=legacy.session_manager.list_sessions(),
             max_sessions=stats.get("max_sessions"),
             available_slots=stats.get("available_slots"),
+            error=None,
         )
 
     @server.tool(name="stata_create_session", description="Create a new session for parallel execution.", structured_output=True)
     async def stata_create_session(session_id: str | None = None) -> dict[str, Any]:
         if not legacy.multi_session_enabled or legacy.session_manager is None:
             return {"status": "error", "message": "Multi-session mode is not enabled"}
-        return legacy.session_manager.create_session(session_id)
+        return cast(dict[str, Any], legacy.session_manager.create_session(session_id))
 
     @server.tool(name="stata_get_session", description="Inspect a specific Stata session.", structured_output=True)
     async def stata_get_session(session_id: str) -> SessionDetailsResult:
         if not legacy.multi_session_enabled or legacy.session_manager is None:
-            return SessionDetailsResult(status="error", error="Multi-session mode is not enabled")
+            return SessionDetailsResult(status="error", session=None, error="Multi-session mode is not enabled")
         session = legacy.session_manager.get_session(session_id)
         if not session:
-            return SessionDetailsResult(status="error", error=f"Session not found: {session_id}")
-        return SessionDetailsResult(status="success", session=session.to_dict())
+            return SessionDetailsResult(status="error", session=None, error=f"Session not found: {session_id}")
+        return SessionDetailsResult(status="success", session=session.to_dict(), error=None)
 
     @server.tool(name="stata_destroy_session", description="Destroy a non-default Stata session.", structured_output=True)
     async def stata_destroy_session(session_id: str) -> dict[str, Any]:
@@ -469,15 +472,15 @@ def build_mcp_server() -> FastMCP:
 
     @server.tool(name="stata_stop_execution", description="Stop the currently running Stata execution.", structured_output=True)
     async def stata_stop_execution(session_id: str | None = None) -> dict[str, Any]:
-        return await legacy.stop_execution(session_id=session_id)
+        return cast(dict[str, Any], await legacy.stop_execution(session_id=session_id))
 
     @server.tool(name="stata_execution_status", description="Get the current execution status.", structured_output=True)
     async def stata_execution_status() -> dict[str, Any]:
-        return await legacy.get_execution_status()
+        return cast(dict[str, Any], await legacy.get_execution_status())
 
     @server.tool(name="stata_restart_session", description="Restart the default Stata session.", structured_output=True)
     async def stata_restart_session() -> dict[str, Any]:
-        return await legacy.restart_session()
+        return cast(dict[str, Any], await legacy.restart_session())
 
     return server
 

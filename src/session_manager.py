@@ -96,9 +96,9 @@ class Session:
     """Represents a Stata session with its worker process"""
     session_id: str
     process: multiprocessing.Process | None = None
-    command_queue: multiprocessing.Queue | None = None
-    result_queue: multiprocessing.Queue | None = None
-    stop_event: multiprocessing.Event | None = None  # For signaling stop without queue race
+    command_queue: Any | None = None
+    result_queue: Any | None = None
+    stop_event: Any | None = None  # For signaling stop without queue race
     state: SessionState = SessionState.CREATING
     created_at: float = field(default_factory=time.time)
     last_activity: float = field(default_factory=time.time)
@@ -139,7 +139,7 @@ class SessionManager:
         worker_start_timeout: int = 60,
         command_timeout: int = 600,
         enabled: bool = True,
-        graphs_dir: str = None
+        graphs_dir: str | None = None
     ):
         """
         Initialize the session manager.
@@ -284,9 +284,9 @@ class SessionManager:
         self._logger.info(f"Creating session {session_id} (default={is_default})")
 
         # Create queues for IPC
-        command_queue = multiprocessing.Queue()
-        result_queue = multiprocessing.Queue()
-        stop_event = multiprocessing.Event()  # For signaling stop without queue race
+        command_queue: Any = multiprocessing.Queue()
+        result_queue: Any = multiprocessing.Queue()
+        stop_event: Any = multiprocessing.Event()  # For signaling stop without queue race
 
         # Create session object
         session = Session(
@@ -834,7 +834,7 @@ class SessionManager:
     def _execute_command(
         self,
         session: Session,
-        command_type: CommandType,
+        command_type: Any,
         payload: dict[str, Any],
         timeout: float
     ) -> dict[str, Any]:
@@ -866,8 +866,13 @@ class SessionManager:
             session.last_activity = time.time()
 
         try:
+            command_queue = session.command_queue
+            result_queue = session.result_queue
+            if command_queue is None or result_queue is None:
+                raise RuntimeError(f"Session {session.session_id} IPC queues are not initialized")
+
             # Send command
-            session.command_queue.put({
+            command_queue.put({
                 'type': command_type.value,
                 'command_id': command_id,
                 'payload': payload
@@ -886,7 +891,7 @@ class SessionManager:
                         break
 
                     try:
-                        candidate = session.result_queue.get(timeout=min(remaining_timeout, 1.0))
+                        candidate = result_queue.get(timeout=min(remaining_timeout, 1.0))
                         candidate_id = candidate.get('command_id', '')
 
                         # Check if this result matches our command
@@ -1072,6 +1077,8 @@ if __name__ == "__main__":
         create_result = manager.create_session()
         if create_result.get("success"):
             new_session_id = create_result.get("session_id")
+            if not isinstance(new_session_id, str):
+                raise RuntimeError("Session manager returned a non-string session ID")
             print(f"Created session: {new_session_id}")
 
             # Execute on new session
