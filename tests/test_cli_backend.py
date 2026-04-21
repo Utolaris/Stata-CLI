@@ -9,7 +9,6 @@ from pathlib import Path
 from prompt_toolkit.buffer import Buffer
 
 import stata_cli_backend as backend
-from api_models import GraphArtifact
 
 
 def test_run_selection_command_single_session(monkeypatch):
