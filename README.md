@@ -1,22 +1,28 @@
 # stata-cli
 
-`stata-cli` is a local command-line tool for running Stata code, `.do` files, and `.dta` data through the Python/PyStata backend in this repository.
+[中文文档](README.zh.md)
+
+`stata-cli` is an AI-agent-oriented Stata CLI for running Stata code, `.do` files, and `.dta` data through the Python/PyStata backend in this repository.
 
 This repo is designed so an AI agent can quickly understand the project, install the right dependencies, bootstrap an analysis workspace, and run Stata locally without needing VS Code.
 
-This CLI provides a REPL that allows users to run Stata commands from any directory and supports syntax highlighting; it is designed for human use, not direct AI use.
+This CLI also provides a human-oriented REPL that allows users to run Stata commands from any directory with syntax highlighting.
 
 ## Install
 
 ### 1. Install Stata 18
 
-Install Stata 18 first. On Windows, the default location is best:
+Install Stata 18 first.
+
+On Windows, the default location is best:
 
 ```text
 C:\Program Files\Stata18
 ```
 
-If Stata is installed somewhere else, pass `--stata-path` or set it in the CLI config.
+On macOS, Stata is usually installed in the default location, so no extra path setup is normally required.
+
+If Stata is installed in a custom location, pass `--stata-path` or set it in the CLI config.
 
 ### 2. Prepare the Python backend
 
@@ -30,13 +36,27 @@ uv sync --all-extras --python 3.11
 
 This project ships a repo-local binary under `bin/` because the CLI depends on the Python backend that lives in the same repository.
 
-After cloning the repo, add its `bin/` directory to your shell `PATH`:
+After cloning the repo, add its `bin/` directory to your `PATH`.
+
+macOS / Linux:
 
 ```bash
 export PATH="/absolute/path/to/stata-cli/bin:$PATH"
 ```
 
-Put that line in your shell config if you want it to persist.
+Windows PowerShell:
+
+```powershell
+$env:Path = "C:\absolute\path\to\stata-cli\bin;$env:Path"
+```
+
+Windows Command Prompt:
+
+```bat
+set PATH=C:\absolute\path\to\stata-cli\bin;%PATH%
+```
+
+Put the command for your platform in your shell/profile config if you want it to persist.
 
 The binary in `bin/` resolves the repository root from its own location, so keeping it inside the repo means you do not need a separate global install step.
 
