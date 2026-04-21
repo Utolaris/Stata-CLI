@@ -28,7 +28,7 @@ struct Cli {
     working_dir: Option<PathBuf>,
     #[arg(long)]
     timeout: Option<u32>,
-    #[arg(long)]
+    #[arg(long, hide = true)]
     json: bool,
     #[arg(long)]
     quiet: bool,
@@ -196,7 +196,7 @@ fn main() -> Result<()> {
                 command_args,
             )?;
             persist_stata_path_if_needed(&resolved_stata_path, &result)?;
-            render_result(&result, effective_cli.json, effective_cli.quiet)?;
+            render_result(&result, effective_cli.quiet)?;
             Ok(())
         }
         Commands::File {
@@ -225,7 +225,7 @@ fn main() -> Result<()> {
                 vec![resolved_path.as_os_str().to_os_string()],
             )?;
             persist_stata_path_if_needed(&resolved_stata_path, &result)?;
-            render_result(&result, file_cli.json, file_cli.quiet)?;
+            render_result(&result, file_cli.quiet)?;
             Ok(())
         }
         Commands::Init { target_dir } => {
@@ -237,7 +237,7 @@ fn main() -> Result<()> {
                 "init",
                 vec![target_dir.as_os_str().to_os_string()],
             )?;
-            render_json_payload(&payload, effective_cli.json)
+            render_json_payload(&payload)
         }
         Commands::Repl => unreachable!("repl is handled before project-root resolution"),
         Commands::Data { command } => {
@@ -251,7 +251,7 @@ fn main() -> Result<()> {
                 backend_args,
             )?;
             persist_stata_path_if_needed_json(&resolved_stata_path, &payload)?;
-            render_json_payload(&payload, effective_cli.json)
+            render_json_payload(&payload)
         }
     }
 }
@@ -709,7 +709,7 @@ fn persist_stata_path_if_needed_json(
     Ok(())
 }
 
-fn base_backend_cli_args(cli: &Cli, json: bool) -> Vec<OsString> {
+fn base_backend_cli_args(cli: &Cli, include_json: bool) -> Vec<OsString> {
     let mut args = Vec::new();
     if let Some(path) = &cli.stata_path {
         args.push(OsString::from("--stata-path"));
@@ -743,15 +743,15 @@ fn base_backend_cli_args(cli: &Cli, json: bool) -> Vec<OsString> {
         args.push(OsString::from("--session-timeout"));
         args.push(OsString::from(session_timeout.to_string()));
     }
-    if json {
+    if include_json {
         args.push(OsString::from("--json"));
     }
     args
 }
 
-fn base_backend_args(repo_root: &Path, cli: &Cli, json: bool) -> Vec<OsString> {
+fn base_backend_args(repo_root: &Path, cli: &Cli, include_json: bool) -> Vec<OsString> {
     let mut args = vec![backend_script(repo_root).into_os_string()];
-    args.extend(base_backend_cli_args(cli, json));
+    args.extend(base_backend_cli_args(cli, include_json));
     args
 }
 
@@ -889,38 +889,8 @@ fn invoke_backend_json(
     })
 }
 
-fn render_result(result: &ExecutionResult, emit_json: bool, quiet: bool) -> Result<()> {
-    if emit_json {
-        println!("{}", serde_json::to_string_pretty(result)?);
-        if result.status != "success" {
-            bail!(
-                "{}",
-                result
-                    .error
-                    .clone()
-                    .unwrap_or_else(|| "stata-cli command failed".to_string())
-            );
-        }
-        return Ok(());
-    }
-
-    if !result.output.trim().is_empty() {
-        println!("{}", result.output);
-    }
-    if !quiet && !result.graphs.is_empty() {
-        println!("\nGraphs:");
-        for graph in &result.graphs {
-            println!("- {}", graph.path);
-        }
-    }
-    if !quiet {
-        if let Some(log_file) = &result.log_file {
-            println!("\nLog file: {}", log_file);
-        }
-        if let Some(session_id) = &result.session_id {
-            println!("Session: {}", session_id);
-        }
-    }
+fn render_result(result: &ExecutionResult, _quiet: bool) -> Result<()> {
+    println!("{}", serde_json::to_string_pretty(result)?);
     if result.status != "success" {
         bail!(
             "{}",
@@ -933,7 +903,7 @@ fn render_result(result: &ExecutionResult, emit_json: bool, quiet: bool) -> Resu
     Ok(())
 }
 
-fn render_json_payload(payload: &Value, _emit_json: bool) -> Result<()> {
+fn render_json_payload(payload: &Value) -> Result<()> {
     println!("{}", serde_json::to_string_pretty(payload)?);
 
     let status = payload
@@ -1172,23 +1142,7 @@ fn doctor_command(
         checks,
     };
 
-    if cli.json {
-        println!("{}", serde_json::to_string_pretty(&report)?);
-    } else {
-        for check in &report.checks {
-            let label = match check.status {
-                "ok" => "ok",
-                "warn" => "warn",
-                _ => "error",
-            };
-            println!("[{}] {}: {}", label, check.name, check.detail);
-        }
-        if report.status == "error" {
-            println!("\nDoctor found one or more blocking issues.");
-        } else {
-            println!("\nDoctor checks completed successfully.");
-        }
-    }
+    println!("{}", serde_json::to_string_pretty(&report)?);
 
     if report.status == "error" {
         bail!("stata-cli doctor found one or more blocking issues");
@@ -1246,13 +1200,17 @@ mod tests {
 
     #[test]
     fn parse_run_command() {
-        let cli = Cli::parse_from(["stata-cli", "--json", "run", "--code", "display 1+1"]);
-
-        assert!(cli.json);
+        let cli = Cli::parse_from(["stata-cli", "run", "--code", "display 1+1"]);
         match cli.command {
             Commands::Run { code } => assert_eq!(code, "display 1+1"),
             _ => panic!("expected run command"),
         }
+    }
+
+    #[test]
+    fn deprecated_json_flag_still_parses() {
+        let cli = Cli::parse_from(["stata-cli", "--json", "doctor"]);
+        assert!(cli.json);
     }
 
     #[test]

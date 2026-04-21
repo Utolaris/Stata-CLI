@@ -61,7 +61,7 @@ Copy the bundled skill into Codex's local skill directory:
 
 ```bash
 mkdir -p ~/.codex/skills/stata-cli
-cp skills/stata-cli/SKILL.md ~/.codex/skills/stata-cli/SKILL.md
+cp -R skills/stata-cli/. ~/.codex/skills/stata-cli/
 ```
 
 ### 5. Verify the setup
@@ -79,7 +79,7 @@ stata-cli init ./my-analysis
 ```
 
 - Create an agent-oriented Stata working directory
-- Generate `AGENTS.md`, `data/`, `do/`, `outputs/`, `scripts/`, `do/analysis.do`, `scripts/plot.py`, and `stata-packages.md`
+- Generate `AGENTS.md`, `data/`, `do/`, `outputs/`, `scripts/`, `do/analysis.do`, and `scripts/plot.py`
 - Fail if scaffold files already exist instead of overwriting them silently
 
 ### Run Stata code
@@ -90,7 +90,7 @@ stata-cli run --code 'display 1+1'
 
 - Execute inline Stata code
 - Pass `--working-dir`, `--timeout`, `--stata-path`, and `--stata-edition` when needed
-- Use `--json` for structured output
+- Non-REPL commands always return structured JSON
 
 ### Run a `.do` file
 
@@ -116,7 +116,6 @@ stata-cli repl
 
 ```bash
 stata-cli doctor
-stata-cli --json doctor
 ```
 
 - Check repo root resolution
@@ -127,9 +126,9 @@ stata-cli --json doctor
 ### Preview data
 
 ```bash
-stata-cli --json data view --input-dta /absolute/path/to/data.dta --max-rows 20
-stata-cli --json data view --if-condition 'iq > 110' --max-rows 10
-stata-cli --json data view
+stata-cli data view --input-dta /absolute/path/to/data.dta --max-rows 20
+stata-cli data view --if-condition 'iq > 110' --max-rows 10
+stata-cli data view
 ```
 
 - Preview rows from the current dataset
@@ -151,11 +150,12 @@ Then keep the working pattern simple:
 - Put substantial Stata logic in `do/analysis.do`
 - Include `capture log close` and `set more off`
 - Write full text output to `outputs/result.txt`
-- Run the analysis with `stata-cli file do/analysis.do --json`
+- Run the analysis with `stata-cli file do/analysis.do`
 - Use the JSON response only to inspect `status`, `error`, `log_file`, and `graphs`
 - Use `data view` for schema checks and small previews, not full table dumps
 - Use Python scripts under `scripts/` for final charts saved into `outputs/`
 - Run `which <command>` before using third-party Stata packages, and ask before installing anything
+- If the local `stata-cli` skill is available, use it for Stata syntax, package guidance, and idiomatic patterns
 
 ### Export data to CSV
 

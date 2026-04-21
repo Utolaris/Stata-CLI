@@ -48,7 +48,6 @@ fn normalize_windows_path(path: &Path) -> String {
 fn run_command_round_trips_through_python_backend() {
     let temp = tempdir().unwrap();
     let output = base_command()
-        .arg("--json")
         .arg("--session-id")
         .arg("rust-run")
         .arg("--working-dir")
@@ -84,7 +83,6 @@ fn file_command_returns_structured_python_artifacts() {
     std::fs::write(&do_file, "display 1+1\n").unwrap();
 
     let output = base_command()
-        .arg("--json")
         .arg("--session-id")
         .arg("rust-file")
         .arg("file")
@@ -121,7 +119,7 @@ fn file_command_returns_structured_python_artifacts() {
 
 #[test]
 fn doctor_command_checks_python_backend_probe() {
-    let output = base_command().arg("--json").arg("doctor").output().unwrap();
+    let output = base_command().arg("doctor").output().unwrap();
 
     assert!(
         output.status.success(),
@@ -142,12 +140,7 @@ fn init_command_creates_agent_workspace_scaffold() {
     let temp = tempdir().unwrap();
     let target = temp.path().join("my-analysis");
 
-    let output = base_command()
-        .arg("--json")
-        .arg("init")
-        .arg(&target)
-        .output()
-        .unwrap();
+    let output = base_command().arg("init").arg(&target).output().unwrap();
 
     assert!(
         output.status.success(),
@@ -164,7 +157,7 @@ fn init_command_creates_agent_workspace_scaffold() {
     assert!(target.join("do").join("analysis.do").exists());
     assert!(target.join("outputs").is_dir());
     assert!(target.join("scripts").join("plot.py").exists());
-    assert!(target.join("stata-packages.md").exists());
+    assert!(!target.join("stata-packages.md").exists());
 }
 
 #[test]
@@ -174,12 +167,7 @@ fn init_command_errors_on_existing_scaffold_file() {
     std::fs::create_dir_all(&target).unwrap();
     std::fs::write(target.join("AGENTS.md"), "existing\n").unwrap();
 
-    let output = base_command()
-        .arg("--json")
-        .arg("init")
-        .arg(&target)
-        .output()
-        .unwrap();
+    let output = base_command().arg("init").arg(&target).output().unwrap();
 
     assert!(!output.status.success());
 
@@ -200,7 +188,6 @@ fn data_commands_round_trip_through_python_backend() {
     std::fs::write(&dta_path, "mock dta content\n").unwrap();
 
     let view_output = base_command()
-        .arg("--json")
         .arg("data")
         .arg("view")
         .arg("--max-rows")
@@ -222,7 +209,6 @@ fn data_commands_round_trip_through_python_backend() {
     assert_eq!(view_json["source_dta"], dta_path.to_string_lossy().as_ref());
 
     let export_output = base_command()
-        .arg("--json")
         .arg("data")
         .arg("export-csv")
         .arg("--input-dta")
@@ -249,12 +235,7 @@ fn data_commands_round_trip_through_python_backend() {
 
 #[test]
 fn data_view_defaults_to_50_rows() {
-    let output = base_command()
-        .arg("--json")
-        .arg("data")
-        .arg("view")
-        .output()
-        .unwrap();
+    let output = base_command().arg("data").arg("view").output().unwrap();
 
     assert!(
         output.status.success(),

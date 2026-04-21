@@ -204,7 +204,7 @@ def test_init_workspace_command_creates_expected_scaffold(tmp_path):
     assert (target / "do" / "analysis.do").exists()
     assert (target / "outputs").is_dir()
     assert (target / "scripts" / "plot.py").exists()
-    assert (target / "stata-packages.md").exists()
+    assert not (target / "stata-packages.md").exists()
 
 
 def test_init_workspace_command_writes_required_template_content(tmp_path):
@@ -212,9 +212,13 @@ def test_init_workspace_command_writes_required_template_content(tmp_path):
     backend.init_workspace_command(str(target))
 
     agents_text = (target / "AGENTS.md").read_text(encoding="utf-8")
-    assert "stata-cli file do/analysis.do --json" in agents_text
+    assert "Keep main Stata analysis in `do/analysis.do`." in agents_text
+    assert "Keep input datasets in `data/`." in agents_text
+    assert "Keep derived text results, exported tables, and generated files in `outputs/`." in agents_text
+    assert "stata-cli file do/analysis.do" in agents_text
     assert "outputs/result.txt" in agents_text
     assert "which <command>" in agents_text
+    assert "Read the local `stata-cli` skill" in agents_text
 
     analysis_text = (target / "do" / "analysis.do").read_text(encoding="utf-8")
     assert "capture log close" in analysis_text
@@ -231,13 +235,6 @@ def test_init_workspace_command_writes_required_template_content(tmp_path):
     assert "import pandas as pd" in plot_text
     assert "import seaborn as sns" in plot_text
     assert 'OUTPUTS_DIR / "plot.png"' in plot_text
-
-    packages_text = (target / "stata-packages.md").read_text(encoding="utf-8")
-    assert "which <command>" in packages_text
-    assert "`estout` / `esttab`" in packages_text
-    assert "`reghdfe`" in packages_text
-    assert "ask the user before installing anything" in packages_text
-
 
 def test_init_workspace_command_errors_on_existing_scaffold_file(tmp_path):
     target = tmp_path / "analysis"
