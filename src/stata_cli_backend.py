@@ -59,6 +59,7 @@ INIT_FILES = {
 - Do not dump large datasets into chat context.
 - Use Stata by default for cleaning, regression, and statistical tests.
 - Use Python by default for final charts and save them into `outputs/`.
+- If the user explicitly wants Stata graphs, export them explicitly to `outputs/` with `graph export` and do not rely on CLI graph capture.
 - Before using any third-party Stata command, run `which <command>` and ask the user before installing anything.
 - Read the local `stata-cli` skill when you need Stata syntax help, package guidance, or idiomatic patterns.
 """,
@@ -394,13 +395,7 @@ def _mock_result_from_args(args: argparse.Namespace) -> ExecutionResult | dict[s
             output=f"mock-file file={file_name} working_dir={working_dir} timeout={args.timeout}",
             session_id=session_id,
             log_file=os.path.join(temp_dir, f"{os.path.splitext(file_name)[0]}.log"),
-            graphs=[
-                GraphArtifact(
-                    name="mock_graph",
-                    path=os.path.join(temp_dir, f"{os.path.splitext(file_name)[0]}.png"),
-                    format="png",
-                )
-            ],
+            graphs=[],
             error=None,
         )
 
@@ -857,25 +852,7 @@ def data_export_csv_command(
 
 
 def _graphs_from_extra(extra: dict | None) -> list[GraphArtifact]:
-    graphs: list[GraphArtifact] = []
-    if extra:
-        for graph in extra.get("graphs", []) or []:
-            graphs.append(GraphArtifact(**graph))
-    return graphs
-
-
-def _maybe_detect_single_session_graphs() -> list[GraphArtifact]:
-    try:
-        return [
-            GraphArtifact(**graph)
-            for graph in legacy.display_graphs_interactive(
-                graph_format="png",
-                width=800,
-                height=600,
-            )
-        ]
-    except Exception:
-        return []
+    return []
 
 
 def run_selection_command(
@@ -898,7 +875,7 @@ def run_selection_command(
             output=filtered,
             session_id=result.get("session_id", session_id),
             log_file=result.get("log_file") or None,
-            graphs=_graphs_from_extra(result.get("extra")),
+            graphs=[],
             error=result.get("error") or None,
         )
 
@@ -910,7 +887,7 @@ def run_selection_command(
         output=filtered,
         session_id=session_id or SessionManager.DEFAULT_SESSION_ID,
         log_file=None,
-        graphs=_maybe_detect_single_session_graphs(),
+        graphs=[],
         error=filtered if status == "error" else None,
     )
 
@@ -950,7 +927,7 @@ def run_file_command(
             output=filtered,
             session_id=result.get("session_id", session_id),
             log_file=result.get("log_file") or log_file,
-            graphs=_graphs_from_extra(result.get("extra")),
+            graphs=[],
             error=result.get("error") or None,
         )
 
@@ -967,7 +944,7 @@ def run_file_command(
         output=filtered,
         session_id=session_id or SessionManager.DEFAULT_SESSION_ID,
         log_file=log_file,
-        graphs=_maybe_detect_single_session_graphs(),
+        graphs=[],
         error=filtered if status == "error" else None,
     )
 

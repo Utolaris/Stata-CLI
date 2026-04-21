@@ -13,29 +13,22 @@ from api_models import GraphArtifact
 
 
 def test_run_selection_command_single_session(monkeypatch):
-    graph_path = str(Path(tempfile.gettempdir()) / "g1.png")
     monkeypatch.setattr(backend.legacy, "multi_session_enabled", False)
     monkeypatch.setattr(backend.legacy, "session_manager", None)
     monkeypatch.setattr(backend.legacy, "run_stata_selection", lambda selection, working_dir, auto_detect: "result line")
     monkeypatch.setattr(backend.legacy, "process_mcp_output", lambda output, **kwargs: output)
-    monkeypatch.setattr(
-        backend,
-        "_maybe_detect_single_session_graphs",
-        lambda: [GraphArtifact(name="g1", path=graph_path, format=None)],
-    )
 
     result = backend.run_selection_command("display 1+1", None, None)
 
     assert result.status == "success"
     assert result.output == "result line"
     assert result.session_id == "default"
-    assert result.graphs[0].path == graph_path
+    assert result.graphs == []
 
 
 def test_run_file_command_multi_session(monkeypatch):
     temp_dir = tempfile.gettempdir()
     log_path = str(Path(temp_dir) / "test.log")
-    graph_path = str(Path(temp_dir) / "g1.png")
     do_path = str(Path(temp_dir) / "test.do")
 
     class DummyManager:
@@ -45,7 +38,7 @@ def test_run_file_command_multi_session(monkeypatch):
                 "output": "file output",
                 "session_id": "abc",
                 "log_file": log_path,
-                "extra": {"graphs": [{"name": "g1", "path": graph_path, "format": None}]},
+                "extra": {"graphs": [{"name": "g1", "path": str(Path(temp_dir) / "g1.png"), "format": None}]},
                 "error": "",
             }
 
@@ -60,7 +53,7 @@ def test_run_file_command_multi_session(monkeypatch):
     assert result.status == "success"
     assert result.output == "file output"
     assert result.log_file == log_path
-    assert result.graphs[0].path == graph_path
+    assert result.graphs == []
 
 
 def test_data_view_command_multi_session(monkeypatch):
@@ -217,6 +210,8 @@ def test_init_workspace_command_writes_required_template_content(tmp_path):
     assert "Keep derived text results, exported tables, and generated files in `outputs/`." in agents_text
     assert "stata-cli file do/analysis.do" in agents_text
     assert "outputs/result.txt" in agents_text
+    assert "Python by default for final charts" in agents_text
+    assert "If the user explicitly wants Stata graphs" in agents_text
     assert "which <command>" in agents_text
     assert "Read the local `stata-cli` skill" in agents_text
 

@@ -55,14 +55,15 @@ cargo build --release --manifest-path rust-cli/Cargo.toml
 Copy-Item rust-cli\\target\\release\\stata-cli.exe bin\\stata-cli.exe
 ```
 
-### 4. Install the Codex skill
+### 4. Locate the bundled skill
 
-Copy the bundled skill into Codex's local skill directory:
+The bundled Stata skill lives at:
 
-```bash
-mkdir -p ~/.codex/skills/stata-cli
-cp -R skills/stata-cli/. ~/.codex/skills/stata-cli/
+```text
+skills/stata-cli/
 ```
+
+If your AI tool supports installable local skills, point it at that directory and install it using the tool's own workflow.
 
 ### 5. Verify the setup
 
@@ -154,6 +155,7 @@ Then keep the working pattern simple:
 - Use the JSON response only to inspect `status`, `error`, `log_file`, and `graphs`
 - Use `data view` for schema checks and small previews, not full table dumps
 - Use Python scripts under `scripts/` for final charts saved into `outputs/`
+- If the user explicitly wants Stata graphs, write explicit `graph export "outputs/..."` commands in the `.do` file instead of relying on CLI graph capture
 - Run `which <command>` before using third-party Stata packages, and ask before installing anything
 - If the local `stata-cli` skill is available, use it for Stata syntax, package guidance, and idiomatic patterns
 

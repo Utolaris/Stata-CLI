@@ -37,6 +37,7 @@ stata-cli repl
 - Do not dump large tables into chat context.
 - Use Stata for data cleaning, modeling, regression, tests, and exports.
 - Use Python under `scripts/` for final charts saved into `outputs/`.
+- If the user explicitly wants Stata graphs, write explicit `graph export` commands to `outputs/` and do not rely on CLI graph capture.
 - Before using any third-party Stata command, run `which <command>`.
 - Do not install third-party Stata packages unless the user explicitly approves it.
 

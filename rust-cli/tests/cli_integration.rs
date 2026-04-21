@@ -103,14 +103,10 @@ fn file_command_returns_structured_python_artifacts() {
     let json: Value = serde_json::from_slice(&output.stdout).unwrap();
     let temp_base = env::temp_dir();
     let expected_log = temp_base.join("sample.log");
-    let expected_graph = temp_base.join("sample.png");
     assert_eq!(json["status"], "success");
     assert_eq!(json["session_id"], "rust-file");
     assert_eq!(json["log_file"], expected_log.to_string_lossy().as_ref());
-    assert_eq!(
-        json["graphs"][0]["path"],
-        expected_graph.to_string_lossy().as_ref()
-    );
+    assert_eq!(json["graphs"], serde_json::json!([]));
     let rendered_output = json["output"].as_str().unwrap();
     assert!(rendered_output.contains("mock-file"));
     assert!(rendered_output.contains("sample.do"));

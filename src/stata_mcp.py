@@ -190,15 +190,13 @@ def initialize_runtime(config: RuntimeConfig) -> None:
         raise FileNotFoundError(f"Stata path does not exist: {stata_path}")
 
     if legacy.multi_session_enabled:
-        graphs_dir = os.path.join(os.getcwd(), ".stata-mcp", "graphs")
-        os.makedirs(graphs_dir, exist_ok=True)
         legacy.session_manager = SessionManager(
             stata_path=stata_path,
             stata_edition=config.stata_edition,
             max_sessions=config.max_sessions,
             session_timeout=config.session_timeout,
             enabled=True,
-            graphs_dir=graphs_dir,
+            graphs_dir=None,
         )
         if not legacy.session_manager.start():
             raise RuntimeError("Failed to start session manager")

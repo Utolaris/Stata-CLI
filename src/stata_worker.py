@@ -330,9 +330,8 @@ def worker_process(
     worker_temp_dir = None  # Track temp directory for cleanup
 
     # Set default graphs directory if not provided
-    if graphs_dir is None:
-        graphs_dir = os.path.join(tempfile.gettempdir(), 'stata_mcp_graphs')
-    os.makedirs(graphs_dir, exist_ok=True)
+    if graphs_dir is not None:
+        os.makedirs(graphs_dir, exist_ok=True)
 
     def send_result(command_id: str, status: str, output: str = "", error: str = "",
                     execution_time: float = 0.0, extra: dict[str, Any] | None = None):
