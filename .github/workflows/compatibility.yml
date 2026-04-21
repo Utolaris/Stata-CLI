@@ -129,6 +129,16 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
       - name: Set up Rust stable
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -138,6 +148,16 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: rust-cli
+
+      - name: Install Python backend dependencies (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: uv sync --all-extras --frozen --python 3.11
+
+      - name: Install Python backend dependencies (macOS zsh)
+        if: runner.os == 'macOS'
+        shell: zsh {0}
+        run: uv sync --all-extras --frozen --python 3.11
 
       - name: Check Rust formatting (Windows)
         if: runner.os == 'Windows'
