@@ -1,0 +1,180 @@
+name: Compatibility
+
+on:
+  push:
+    paths-ignore:
+      - "**/*.md"
+      - "LICENSE"
+  pull_request:
+    paths-ignore:
+      - "**/*.md"
+      - "LICENSE"
+  workflow_dispatch:
+
+env:
+  SKIP_STATA_TESTS: "true"
+
+jobs:
+  python-checks:
+    name: Python / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - windows-latest
+          - macos-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - name: Install Python dependencies (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: uv sync --all-extras --frozen --python 3.11
+
+      - name: Install Python dependencies (macOS zsh)
+        if: runner.os == 'macOS'
+        shell: zsh {0}
+        run: uv sync --all-extras --frozen --python 3.11
+
+      - name: Run Ruff (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: uv run ruff check .
+
+      - name: Run Ruff (macOS zsh)
+        if: runner.os == 'macOS'
+        shell: zsh {0}
+        run: uv run ruff check .
+
+      - name: Run mypy (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: uv run mypy src
+
+      - name: Run mypy (macOS zsh)
+        if: runner.os == 'macOS'
+        shell: zsh {0}
+        run: uv run mypy src
+
+      - name: Run Python compatibility tests (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: >
+          uv run pytest -q
+          tests/test_cli_backend.py
+          tests/test_platform_paths.py
+          tests/test_native_mcp.py
+          tests/test_compact_filter.py
+          tests/test_session_manager.py
+          tests/test_stop_execution.py
+
+      - name: Run Python compatibility tests (macOS zsh)
+        if: runner.os == 'macOS'
+        shell: zsh {0}
+        run: >
+          uv run pytest -q
+          tests/test_cli_backend.py
+          tests/test_platform_paths.py
+          tests/test_native_mcp.py
+          tests/test_compact_filter.py
+          tests/test_session_manager.py
+          tests/test_stop_execution.py
+
+      - name: Run backend CLI smoke test (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          STATA_CLI_BACKEND_TEST_MODE: "1"
+        run: >
+          uv run python -m stata_cli_backend
+          --json
+          --stata-path C:\stub\stata
+          repl
+
+      - name: Run backend CLI smoke test (macOS zsh)
+        if: runner.os == 'macOS'
+        shell: zsh {0}
+        env:
+          STATA_CLI_BACKEND_TEST_MODE: "1"
+        run: >
+          uv run python -m stata_cli_backend
+          --json
+          --stata-path /Applications/Stata
+          repl
+
+  rust-checks:
+    name: Rust / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - windows-latest
+          - macos-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust-cli
+
+      - name: Check Rust formatting (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: cargo fmt --manifest-path rust-cli/Cargo.toml --check
+
+      - name: Check Rust formatting (macOS zsh)
+        if: runner.os == 'macOS'
+        shell: zsh {0}
+        run: cargo fmt --manifest-path rust-cli/Cargo.toml --check
+
+      - name: Run clippy (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: cargo clippy --manifest-path rust-cli/Cargo.toml --all-targets -- -D warnings
+
+      - name: Run clippy (macOS zsh)
+        if: runner.os == 'macOS'
+        shell: zsh {0}
+        run: cargo clippy --manifest-path rust-cli/Cargo.toml --all-targets -- -D warnings
+
+      - name: Run Rust tests (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: cargo test --manifest-path rust-cli/Cargo.toml
+
+      - name: Run Rust tests (macOS zsh)
+        if: runner.os == 'macOS'
+        shell: zsh {0}
+        run: cargo test --manifest-path rust-cli/Cargo.toml
+
+      - name: Build Rust CLI release binary (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: cargo build --release --manifest-path rust-cli/Cargo.toml
+
+      - name: Build Rust CLI release binary (macOS zsh)
+        if: runner.os == 'macOS'
+        shell: zsh {0}
+        run: cargo build --release --manifest-path rust-cli/Cargo.toml
