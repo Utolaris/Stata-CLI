@@ -196,7 +196,7 @@ def main(argv: list[str] | None = None) -> int:
             print_human_payload(init_payload)
             return payload_exit_code(init_payload)
 
-        initialize_runtime(runtime_config)
+        initialize_runtime(runtime_config, lazy_default_session=args.command == "repl")
 
         if args.command == "run":
             payload = run_selection_command(args.code, args.session_id, args.working_dir, args.timeout)

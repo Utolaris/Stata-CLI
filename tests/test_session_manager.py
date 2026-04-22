@@ -127,6 +127,29 @@ class TestSessionManagerConfiguration(unittest.TestCase):
         self.assertTrue(manager.start())
         manager.stop()
 
+    def test_start_can_lazy_boot_default_session(self):
+        """Test that start() can skip waiting for the default session."""
+        manager = SessionManager(
+            stata_path=STATA_PATH,
+            stata_edition=STATA_EDITION,
+            enabled=True
+        )
+        calls = []
+
+        def fake_create(session_id, is_default=False, wait_for_ready=True):
+            calls.append((session_id, is_default, wait_for_ready))
+            return True
+
+        manager._create_session_internal = fake_create  # type: ignore[method-assign]
+
+        try:
+            self.assertTrue(manager.start(wait_for_default_ready=False))
+            self.assertEqual(calls, [("default", True, False)])
+            self.assertIsNotNone(manager._cleanup_thread)
+            self.assertTrue(manager._cleanup_thread.is_alive())
+        finally:
+            manager.stop()
+
 
 class TestSessionManagerLifecycle(unittest.TestCase):
     """Test session manager lifecycle with real workers"""

@@ -45,7 +45,7 @@ def configure_runtime_logging(config: RuntimeConfig) -> None:
     )
 
 
-def initialize_runtime(config: RuntimeConfig) -> None:
+def initialize_runtime(config: RuntimeConfig, *, lazy_default_session: bool = False) -> None:
     """Initialize the shared session manager for backend commands."""
     configure_runtime_logging(config)
     if config.stata_path and not os.path.exists(config.stata_path):
@@ -62,7 +62,7 @@ def initialize_runtime(config: RuntimeConfig) -> None:
         enabled=True,
         graphs_dir=None,
     )
-    if not manager.start():
+    if not manager.start(wait_for_default_ready=not lazy_default_session):
         raise RuntimeError("Failed to start the backend session manager")
 
     state.config = config

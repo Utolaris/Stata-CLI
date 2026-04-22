@@ -2,14 +2,47 @@
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-bin_dir="$repo_root/bin"
 
-mkdir -p "$bin_dir"
+usage() {
+  cat <<'EOF'
+Usage:
+  ./scripts/update_repo_bin.sh [macos|windows|all]
 
-if [[ "$OSTYPE" == msys* || "$OSTYPE" == cygwin* || "$OSTYPE" == win32* ]]; then
-  cargo build --release --manifest-path "$repo_root/rust-cli/Cargo.toml"
-  cp "$repo_root/rust-cli/target/release/stata-cli.exe" "$bin_dir/stata-cli.exe"
-else
-  cargo build --release --manifest-path "$repo_root/rust-cli/Cargo.toml"
-  cp "$repo_root/rust-cli/target/release/stata-cli" "$bin_dir/stata-cli"
-fi
+Default behavior:
+  - macOS/Linux hosts: build the local macOS binary into bin/
+  - Windows-like hosts: build the local Windows binary into bin/
+
+Explicit targets:
+  macos    Build the repo-local macOS binary with cargo build --release
+  windows  Build the repo-local Windows binary with cargo zigbuild
+  all      Build both repo-local binaries
+EOF
+}
+
+target="${1:-}"
+
+case "$target" in
+  "" )
+    if [[ "$OSTYPE" == msys* || "$OSTYPE" == cygwin* || "$OSTYPE" == win32* ]]; then
+      exec bash "$repo_root/scripts/build_windows_bin.sh"
+    fi
+    exec bash "$repo_root/scripts/build_macos_bin.sh"
+    ;;
+  macos )
+    exec bash "$repo_root/scripts/build_macos_bin.sh"
+    ;;
+  windows )
+    exec bash "$repo_root/scripts/build_windows_bin.sh"
+    ;;
+  all )
+    bash "$repo_root/scripts/build_macos_bin.sh"
+    bash "$repo_root/scripts/build_windows_bin.sh"
+    ;;
+  -h|--help|help )
+    usage
+    ;;
+  * )
+    usage >&2
+    exit 1
+    ;;
+esac

@@ -10,6 +10,7 @@ from prompt_toolkit.buffer import Buffer
 
 import stata_cli_backend as backend
 from stata_cli.atom.runtime_state import RuntimeConfig
+from stata_cli.atom.session_manager import SessionState
 from stata_cli.molecule import data_ops, file_ops, selection_ops
 
 
@@ -47,6 +48,79 @@ def test_run_selection_command_single_session(monkeypatch):
     assert result.output == "result line"
     assert result.session_id == "default"
     assert result.graphs == []
+
+
+def test_run_selection_command_waits_for_booting_default_session(monkeypatch):
+    events = []
+
+    class DummySession:
+        def __init__(self):
+            self.state = SessionState.CREATING
+            self.error_message = ""
+
+    class DummyManager:
+        worker_start_timeout = 12
+
+        def __init__(self):
+            self.session = DummySession()
+
+        def get_session(self, session_id=None):
+            events.append(("get_session", session_id))
+            return self.session
+
+        def wait_for_ready(self, session, timeout=30.0):
+            events.append(("wait_for_ready", timeout, session.state.value))
+            session.state = SessionState.READY
+            return True
+
+        def execute(self, code, session_id=None, timeout=None):
+            events.append(("execute", session_id, timeout, code))
+            return {"status": "success", "output": "booted", "session_id": session_id or "default"}
+
+    monkeypatch.setattr(selection_ops, "get_runtime_state", lambda: DummyState(DummyManager(), multi_session=False))
+
+    result = backend.run_selection_command("display 1+1", None, None)
+
+    assert result.status == "success"
+    assert result.output == "booted"
+    assert ("get_session", None) in events
+    assert ("wait_for_ready", 12.0, "creating") in events
+    assert any(event[0] == "execute" for event in events)
+
+
+def test_run_selection_command_returns_boot_error_when_default_session_never_readies(monkeypatch):
+    class DummySession:
+        def __init__(self):
+            self.state = SessionState.CREATING
+            self.error_message = "Stata startup failed"
+
+    class DummyManager:
+        worker_start_timeout = 9
+
+        def __init__(self):
+            self.session = DummySession()
+            self.executed = False
+
+        def get_session(self, session_id=None):
+            return self.session
+
+        def wait_for_ready(self, session, timeout=30.0):
+            session.state = SessionState.ERROR
+            return False
+
+        def execute(self, code, session_id=None, timeout=None):
+            self.executed = True
+            return {"status": "success", "output": "unexpected", "session_id": session_id or "default"}
+
+    manager = DummyManager()
+    monkeypatch.setattr(selection_ops, "get_runtime_state", lambda: DummyState(manager, multi_session=False))
+
+    result = backend.run_selection_command("display 1+1", None, None)
+
+    assert result.status == "error"
+    assert result.error == "Stata startup failed"
+    assert result.session_id == "default"
+    assert manager.executed is False
 
 
 def test_run_file_command_multi_session(monkeypatch):

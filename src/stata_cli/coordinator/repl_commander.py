@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import os
 import re
+import sys
 from pathlib import Path
 
 from prompt_toolkit import PromptSession, print_formatted_text
@@ -235,6 +236,13 @@ def _create_repl_session() -> PromptSession:
     )
 
 
+def _clear_repl_screen() -> None:
+    if not sys.stdout.isatty():
+        return
+    sys.stdout.write("\033[2J\033[H")
+    sys.stdout.flush()
+
+
 def _sanitize_repl_output(text: str) -> str:
     if not text:
         return ""
@@ -335,6 +343,7 @@ def print_repl_result(result: ExecutionResult) -> None:
 
 def repl_command(session_id: str | None, working_dir: str | None) -> int:
     session = _create_repl_session()
+    _clear_repl_screen()
     while True:
         try:
             line = session.prompt([("class:prompt", ". ")])

@@ -168,9 +168,15 @@ class SessionManager:
 
         self._logger = logging.getLogger(__name__)
 
-    def start(self) -> bool:
+    def start(self, *, wait_for_default_ready: bool = True) -> bool:
         """
         Start the session manager and create the default session.
+
+        Args:
+            wait_for_default_ready: Whether to block until the default session
+                finishes Stata startup. REPL lazy boot sets this to False so the
+                prompt can appear immediately while startup continues in the
+                background.
 
         Returns:
             True if started successfully, False otherwise
@@ -185,7 +191,8 @@ class SessionManager:
         try:
             success = self._create_session_internal(
                 self.DEFAULT_SESSION_ID,
-                is_default=True
+                is_default=True,
+                wait_for_ready=wait_for_default_ready,
             )
             if not success:
                 self._logger.error("Failed to create default session")
@@ -260,7 +267,13 @@ class SessionManager:
         else:
             return {"success": False, "session_id": "", "error": "Failed to create worker process"}
 
-    def _create_session_internal(self, session_id: str, is_default: bool = False) -> bool:
+    def _create_session_internal(
+        self,
+        session_id: str,
+        is_default: bool = False,
+        *,
+        wait_for_ready: bool = True,
+    ) -> bool:
         """
         Internal method to create a session and its worker process.
 
@@ -310,32 +323,60 @@ class SessionManager:
             process.start()
             session.process = process
 
-            # Wait for initialization
-            try:
-                init_result = result_queue.get(timeout=self.worker_start_timeout)
+            if not wait_for_ready:
+                init_thread = threading.Thread(
+                    target=self._complete_async_session_start,
+                    args=(session,),
+                    daemon=True,
+                    name=f"session-init-{session_id}",
+                )
+                init_thread.start()
+                self._logger.info(f"Session {session_id} booting asynchronously")
+                return True
 
-                if init_result.get('status') == 'ready':
-                    session.state = SessionState.READY
-                    self._logger.info(f"Session {session_id} ready")
-                    return True
-                else:
-                    session.state = SessionState.ERROR
-                    session.error_message = init_result.get('error', 'Unknown init error')
-                    self._logger.error(f"Session {session_id} init failed: {session.error_message}")
-                    self._terminate_worker(session)
-                    return False
-
-            except queue.Empty:
-                session.state = SessionState.ERROR
-                session.error_message = "Worker initialization timeout"
-                self._logger.error(f"Session {session_id} init timeout")
-                self._terminate_worker(session)
-                return False
+            return self._finalize_session_start(session)
 
         except Exception as e:
             session.state = SessionState.ERROR
             session.error_message = str(e)
             self._logger.error(f"Failed to start worker for session {session_id}: {e}")
+            return False
+
+    def _complete_async_session_start(self, session: Session) -> None:
+        """Wait for a lazily started worker to finish initialization."""
+        if self._finalize_session_start(session):
+            return
+        if session.error_message:
+            self._logger.error(f"Session {session.session_id} async init failed: {session.error_message}")
+
+    def _finalize_session_start(self, session: Session) -> bool:
+        """Consume the worker init result and transition the session state."""
+        result_queue = session.result_queue
+        if result_queue is None:
+            session.state = SessionState.ERROR
+            session.error_message = "Worker result queue is not initialized"
+            self._logger.error(f"Session {session.session_id} missing result queue")
+            return False
+
+        try:
+            init_result = result_queue.get(timeout=self.worker_start_timeout)
+
+            if init_result.get('status') == 'ready':
+                session.state = SessionState.READY
+                self._logger.info(f"Session {session.session_id} ready")
+                return True
+
+            session.state = SessionState.ERROR
+            session.error_message = init_result.get('error', 'Unknown init error')
+            self._logger.error(f"Session {session.session_id} init failed: {session.error_message}")
+            self._terminate_worker(session)
+            return False
+
+        except queue.Empty:
+            session.state = SessionState.ERROR
+            session.error_message = "Worker initialization timeout"
+            self._logger.error(f"Session {session.session_id} init timeout")
+            self._terminate_worker(session)
             return False
 
     def destroy_session(self, session_id: str, force: bool = False) -> tuple:
