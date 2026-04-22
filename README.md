@@ -76,12 +76,14 @@ stata-cli doctor
 ### Initialize an AI-ready workspace
 
 ```bash
-stata-cli init ./my-analysis
+mkdir my-analysis
+cd my-analysis
+stata-cli init
 ```
 
-- Create an agent-oriented Stata working directory
+- Copy the repo-root `boilerplate/` scaffold into the current working directory
 - Generate `AGENTS.md`, `data/`, `do/`, `outputs/`, `scripts/`, `do/analysis.do`, and `scripts/plot.py`
-- Fail if scaffold files already exist instead of overwriting them silently
+- Overwrite existing scaffold files silently so users can customize and re-apply the boilerplate
 
 ### Run Stata code
 
@@ -111,7 +113,7 @@ stata-cli repl
 - Run one Stata command at a time in a human-oriented interactive shell
 - Prefer this for quick manual exploration instead of AI workflows
 - Can run from any directory when `stata-cli-backend` is available on `PATH`, or when you pass `--python` to a Python 3.11 environment with the backend installed
-- Uses a Stata-style prompt, syntax highlighting, and filtered output without extra CLI log noise
+- Uses the native Rust REPL with a Stata-style prompt, syntax highlighting, continuation handling, and filtered output without extra CLI log noise
 
 ### Diagnose the local environment
 
@@ -143,7 +145,9 @@ stata-cli data view
 For agent-driven work, start with:
 
 ```bash
-stata-cli init ./my-analysis
+mkdir my-analysis
+cd my-analysis
+stata-cli init
 ```
 
 Then keep the working pattern simple:

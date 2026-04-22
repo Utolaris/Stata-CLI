@@ -82,7 +82,7 @@ def data_export_csv_command(
 
     result = manager.execute(code, session_id=runtime_session_id)
     output_text = (result.get("output") or "").replace("\\n", "\n")
-    filtered = process_output(
+    filtered = output_text if config.raw_output else process_output(
         output_text,
         result_display_mode=config.result_display_mode,
         max_output_tokens=config.max_output_tokens,

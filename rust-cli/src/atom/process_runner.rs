@@ -24,12 +24,6 @@ pub(crate) fn command_output(command: &mut Command) -> Result<Output> {
         .with_context(|| "Failed to launch child process".to_string())
 }
 
-pub(crate) fn command_status(command: &mut Command) -> Result<std::process::ExitStatus> {
-    command
-        .status()
-        .with_context(|| "Failed to launch child process".to_string())
-}
-
 pub(crate) fn configure_pythonpath(command: &mut Command, repo_root: &Path) {
     let src_dir = repo_root.join("src");
     let separator = if cfg!(windows) { ";" } else { ":" };

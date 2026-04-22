@@ -1,7 +1,8 @@
 use serde_json::Value;
 use std::env;
+use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
 use tempfile::tempdir;
 
 fn repo_root() -> PathBuf {
@@ -135,8 +136,13 @@ fn doctor_command_checks_python_backend_probe() {
 fn init_command_creates_agent_workspace_scaffold() {
     let temp = tempdir().unwrap();
     let target = temp.path().join("my-analysis");
+    std::fs::create_dir_all(&target).unwrap();
 
-    let output = base_command().arg("init").arg(&target).output().unwrap();
+    let output = base_command()
+        .arg("init")
+        .current_dir(&target)
+        .output()
+        .unwrap();
 
     assert!(
         output.status.success(),
@@ -157,23 +163,59 @@ fn init_command_creates_agent_workspace_scaffold() {
 }
 
 #[test]
-fn init_command_errors_on_existing_scaffold_file() {
+fn init_command_overwrites_existing_scaffold_file() {
     let temp = tempdir().unwrap();
     let target = temp.path().join("my-analysis");
     std::fs::create_dir_all(&target).unwrap();
     std::fs::write(target.join("AGENTS.md"), "existing\n").unwrap();
 
-    let output = base_command().arg("init").arg(&target).output().unwrap();
+    let output = base_command()
+        .arg("init")
+        .current_dir(&target)
+        .output()
+        .unwrap();
 
-    assert!(!output.status.success());
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
 
     let json: Value = serde_json::from_slice(&output.stdout).unwrap();
-    let expected_conflict = std::fs::canonicalize(target.join("AGENTS.md")).unwrap();
-    assert_eq!(json["status"], "error");
-    assert_eq!(
-        json["conflicts"][0],
-        normalize_windows_path(&expected_conflict)
+    let resolved_target = std::fs::canonicalize(&target).unwrap();
+    assert_eq!(json["status"], "success");
+    assert_eq!(json["target_dir"], normalize_windows_path(&resolved_target));
+    let agents_text = std::fs::read_to_string(target.join("AGENTS.md")).unwrap();
+    assert!(agents_text.contains("Keep main Stata analysis in `do/analysis.do`."));
+}
+
+#[test]
+fn repl_command_runs_native_loop_and_quits() {
+    let temp = tempdir().unwrap();
+    let mut child = base_command()
+        .arg("--working-dir")
+        .arg(temp.path())
+        .arg("repl")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+
+    {
+        let stdin = child.stdin.as_mut().expect("repl stdin should exist");
+        stdin.write_all(b"display 2+3\n:quit\n").unwrap();
+    }
+
+    let output = child.wait_with_output().unwrap();
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
     );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("5"), "stdout: {stdout}");
 }
 
 #[test]

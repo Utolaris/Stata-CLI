@@ -30,16 +30,10 @@ from stata_cli.molecule.data_ops import (  # noqa: F401
 from stata_cli.molecule.file_ops import run_file_command  # noqa: F401
 from stata_cli.molecule.selection_ops import render_error as _render_error  # noqa: F401
 from stata_cli.molecule.selection_ops import run_selection_command  # noqa: F401
-from stata_cli.molecule.workspace_ops import (  # noqa: F401
-    INIT_DIRS,
-    INIT_FILES,
-    init_workspace_command,
-)
+from stata_cli.molecule.workspace_ops import init_workspace_command  # noqa: F401
 
 __all__ = [
     "DEFAULT_DATA_VIEW_MAX_ROWS",
-    "INIT_DIRS",
-    "INIT_FILES",
     "REPL_STYLE",
     "_delete_before_cursor_if_possible",
     "_delete_under_cursor_if_possible",

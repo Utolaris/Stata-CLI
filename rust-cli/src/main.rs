@@ -99,9 +99,9 @@ mod tests {
 
     #[test]
     fn parse_init_command() {
-        let cli = Cli::parse_from(["stata-cli", "init", "./my-analysis"]);
+        let cli = Cli::parse_from(["stata-cli", "init"]);
         match cli.command {
-            Commands::Init { target_dir } => assert_eq!(target_dir, PathBuf::from("./my-analysis")),
+            Commands::Init => {}
             _ => panic!("expected init command"),
         }
     }
@@ -192,7 +192,7 @@ mod tests {
             "doctor",
         ]);
 
-        let args = base_backend_args(&cli, true);
+        let args = base_backend_args(&cli, true, true);
         assert!(args.iter().any(|arg| arg == "--stata-path"));
         assert!(args.iter().any(|arg| arg == "--json"));
         assert!(args.iter().any(|arg| arg == "-m"));

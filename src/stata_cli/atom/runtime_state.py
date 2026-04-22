@@ -15,6 +15,7 @@ class RuntimeConfig:
     log_level: str
     result_display_mode: str
     max_output_tokens: int
+    raw_output: bool
     multi_session: bool
     max_sessions: int
     session_timeout: int
@@ -41,4 +42,3 @@ _STATE = RuntimeState()
 
 def get_runtime_state() -> RuntimeState:
     return _STATE
-

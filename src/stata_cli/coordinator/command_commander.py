@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from ..atom.contracts import ExecutionResult
+from ..coordinator.bridge_commander import bridge_command, mock_bridge_command
 from ..coordinator.repl_commander import repl_command
 from ..coordinator.runtime_commander import (
     build_runtime_config,
@@ -39,6 +40,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--max-sessions", type=int)
     parser.add_argument("--session-timeout", type=int)
     parser.add_argument("--json", action="store_true")
+    parser.add_argument("--raw-output", action="store_true", help=argparse.SUPPRESS)
     parser.set_defaults(multi_session=None)
 
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -58,6 +60,10 @@ def build_parser() -> argparse.ArgumentParser:
     repl_parser = subparsers.add_parser("repl", help="Start a minimal interactive shell")
     repl_parser.add_argument("--session-id")
     repl_parser.add_argument("--working-dir")
+
+    bridge_parser = subparsers.add_parser("bridge", help=argparse.SUPPRESS)
+    bridge_parser.add_argument("--session-id")
+    bridge_parser.add_argument("--working-dir")
 
     init_parser = subparsers.add_parser("init", help="Create an AI-ready Stata workspace scaffold")
     init_parser.add_argument("target_dir")
@@ -180,6 +186,8 @@ def main(argv: list[str] | None = None) -> int:
     if is_test_mode():
         if args.command == "repl":
             return 0
+        if args.command == "bridge":
+            return mock_bridge_command(getattr(args, "session_id", None), getattr(args, "working_dir", None))
         mock_payload = mock_result_from_args(args)
         if args.json:
             return emit_json_payload(mock_payload)
@@ -196,7 +204,7 @@ def main(argv: list[str] | None = None) -> int:
             print_human_payload(init_payload)
             return payload_exit_code(init_payload)
 
-        initialize_runtime(runtime_config, lazy_default_session=args.command == "repl")
+        initialize_runtime(runtime_config, lazy_default_session=args.command in {"repl", "bridge"})
 
         if args.command == "run":
             payload = run_selection_command(args.code, args.session_id, args.working_dir, args.timeout)
@@ -204,6 +212,8 @@ def main(argv: list[str] | None = None) -> int:
             payload = run_file_command(args.file_path, args.timeout, args.session_id, args.working_dir)
         elif args.command == "repl":
             return repl_command(args.session_id, args.working_dir)
+        elif args.command == "bridge":
+            return bridge_command(args.session_id, args.working_dir)
         elif args.command == "data":
             if args.data_command == "view":
                 payload = data_view_command(args.session_id, args.if_condition, args.max_rows, args.input_dta)

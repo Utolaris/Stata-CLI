@@ -6,9 +6,13 @@ use anyhow::{bail, Context, Result};
 use serde_json::Value;
 use std::ffi::OsString;
 use std::path::Path;
-use std::process::Command;
+use std::process::{Child, Command, Stdio};
 
-pub(crate) fn base_backend_cli_args(cli: &Cli, include_json: bool) -> Vec<OsString> {
+pub(crate) fn base_backend_cli_args(
+    cli: &Cli,
+    include_json: bool,
+    raw_output: bool,
+) -> Vec<OsString> {
     let mut args = Vec::new();
     if let Some(path) = &cli.stata_path {
         args.push(OsString::from("--stata-path"));
@@ -45,15 +49,18 @@ pub(crate) fn base_backend_cli_args(cli: &Cli, include_json: bool) -> Vec<OsStri
     if include_json {
         args.push(OsString::from("--json"));
     }
+    if raw_output {
+        args.push(OsString::from("--raw-output"));
+    }
     args
 }
 
-pub(crate) fn base_backend_args(cli: &Cli, include_json: bool) -> Vec<OsString> {
+pub(crate) fn base_backend_args(cli: &Cli, include_json: bool, raw_output: bool) -> Vec<OsString> {
     let mut args = vec![
         OsString::from("-m"),
         OsString::from("stata_cli.entry.backend_main"),
     ];
-    args.extend(base_backend_cli_args(cli, include_json));
+    args.extend(base_backend_cli_args(cli, include_json, raw_output));
     args
 }
 
@@ -160,12 +167,10 @@ pub(crate) fn invoke_backend_json(
         );
     }
 
-    let mut args = base_backend_args(cli, true);
+    let mut args = base_backend_args(cli, true, true);
     args.push(OsString::from(command_name));
     args.append(&mut command_args);
-    if command_name != "init" {
-        args.extend(session_args(cli));
-    }
+    args.extend(session_args(cli));
 
     if let crate::atom::cli_contract::Commands::File { .. } = cli.command {
         if let Some(timeout) = cli.timeout {
@@ -193,40 +198,63 @@ pub(crate) fn invoke_backend_json(
     })
 }
 
-pub(crate) fn render_result(result: &ExecutionResult) -> Result<()> {
-    println!("{}", serde_json::to_string_pretty(result)?);
-    if result.status != "success" {
-        bail!(
-            "{}",
-            result
-                .error
-                .clone()
-                .unwrap_or_else(|| "stata-cli command failed".to_string())
-        );
+pub(crate) fn spawn_bridge_with_project_python(
+    python: &Path,
+    repo_root: &Path,
+    cli: &Cli,
+) -> Result<Child> {
+    let backend = backend_entry(repo_root);
+    if !backend.exists() {
+        bail!("Python backend not found at {}", backend.display());
     }
-    Ok(())
+
+    let mut args = base_backend_args(cli, false, true);
+    args.push(OsString::from("bridge"));
+    args.extend(session_args(cli));
+
+    let mut command = Command::new(python);
+    command
+        .args(&args)
+        .current_dir(repo_root)
+        .env("STATA_CLI_REPL_MODE", "1")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::inherit());
+    configure_pythonpath(&mut command, repo_root);
+    command
+        .spawn()
+        .with_context(|| "Failed to launch interactive backend bridge".to_string())
 }
 
-pub(crate) fn render_json_payload(payload: &Value) -> Result<()> {
-    println!("{}", serde_json::to_string_pretty(payload)?);
+pub(crate) fn spawn_bridge_via_module(python: &Path, cli: &Cli) -> Result<Child> {
+    let mut args = vec![OsString::from("-m"), OsString::from("stata_cli_backend")];
+    args.extend(base_backend_cli_args(cli, false, true));
+    args.push(OsString::from("bridge"));
+    args.extend(session_args(cli));
 
-    let status = payload
-        .get("status")
-        .and_then(Value::as_str)
-        .unwrap_or_default();
-    if matches!(
-        status,
-        "success" | "running" | "idle" | "stop_sent" | "stop_requested" | "not_running"
-    ) {
-        return Ok(());
-    }
+    Command::new(python)
+        .args(&args)
+        .env("STATA_CLI_REPL_MODE", "1")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::inherit())
+        .spawn()
+        .with_context(|| format!("Failed to launch repl bridge with {}", python.display()))
+}
 
-    let message = payload
-        .get("message")
-        .and_then(Value::as_str)
-        .or_else(|| payload.get("error").and_then(Value::as_str))
-        .unwrap_or("stata-cli command failed");
-    bail!("{message}")
+pub(crate) fn spawn_bridge_via_backend_command(command_name: &str, cli: &Cli) -> Result<Child> {
+    let mut args = base_backend_cli_args(cli, false, true);
+    args.push(OsString::from("bridge"));
+    args.extend(session_args(cli));
+
+    Command::new(command_name)
+        .args(&args)
+        .env("STATA_CLI_REPL_MODE", "1")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::inherit())
+        .spawn()
+        .with_context(|| format!("Failed to launch repl bridge with `{command_name}`"))
 }
 
 #[cfg(test)]

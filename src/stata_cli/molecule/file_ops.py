@@ -56,7 +56,7 @@ def run_file_command(
         working_dir=working_dir,
     )
     output = (result.get("output") or "").replace("\\n", "\n")
-    filtered = process_output(
+    filtered = output if config.raw_output else process_output(
         output,
         result_display_mode=config.result_display_mode,
         max_output_tokens=config.max_output_tokens,

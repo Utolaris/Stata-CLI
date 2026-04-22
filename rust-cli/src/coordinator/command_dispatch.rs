@@ -2,25 +2,34 @@ use crate::atom::cli_contract::{Cli, Commands};
 use crate::atom::json_contract::{DoctorCheck, ResolvedStataPath};
 use crate::atom::path_ops::{absolutize_cli_path, backend_entry, default_config_path};
 use crate::molecule::backend_client::{
-    data_backend_invocation, invoke_backend, invoke_backend_json, render_json_payload,
-    render_result,
+    data_backend_invocation, invoke_backend, invoke_backend_json,
 };
 use crate::molecule::doctor_report::{
     backend_entry_check, backend_probe_ok_check, config_file_check, error_check, finalize_report,
     python_ok_check, repo_root_check, stata_path_check,
 };
-use crate::molecule::repl_launch::repl_command;
+use crate::molecule::repl_session::repl_command;
 use crate::molecule::repo_resolution::{resolve_python, resolve_repo_root};
+use crate::molecule::result_render::{
+    prepare_execution_result, prepare_json_payload, render_execution_result, render_json_payload,
+};
 use crate::molecule::stata_path_resolution::{
     clone_with_effective_stata_path, persist_stata_path_if_needed,
     persist_stata_path_if_needed_json, resolve_effective_stata_path,
 };
+use crate::molecule::workspace_init::init_command;
 use anyhow::{bail, Result};
 use clap::Parser;
 use std::ffi::OsString;
 
 pub(crate) fn run() -> Result<()> {
     let cli = Cli::parse();
+
+    if matches!(cli.command, Commands::Init) {
+        let repo_root = resolve_repo_root()?;
+        return init_command(&repo_root.path);
+    }
+
     let resolved_stata_path = resolve_effective_stata_path(&cli)?;
     let effective_cli = clone_with_effective_stata_path(&cli, &resolved_stata_path);
 
@@ -46,8 +55,9 @@ pub(crate) fn run() -> Result<()> {
                 "run",
                 command_args,
             )?;
+            let result = prepare_execution_result(&effective_cli, result, false);
             persist_stata_path_if_needed(&resolved_stata_path, &result)?;
-            render_result(&result)
+            render_execution_result(&result)
         }
         Commands::File {
             path,
@@ -74,20 +84,11 @@ pub(crate) fn run() -> Result<()> {
                 "file",
                 vec![resolved_path.as_os_str().to_os_string()],
             )?;
+            let result = prepare_execution_result(&file_cli, result, true);
             persist_stata_path_if_needed(&resolved_stata_path, &result)?;
-            render_result(&result)
+            render_execution_result(&result)
         }
-        Commands::Init { target_dir } => {
-            let python = resolve_python(effective_cli.python.as_deref(), &repo_root.path)?;
-            let payload = invoke_backend_json(
-                &python.path,
-                &repo_root.path,
-                &effective_cli,
-                "init",
-                vec![target_dir.as_os_str().to_os_string()],
-            )?;
-            render_json_payload(&payload)
-        }
+        Commands::Init => unreachable!("init is handled before runtime resolution"),
         Commands::Repl => unreachable!("repl is handled before project-root resolution"),
         Commands::Data { command } => {
             let python = resolve_python(effective_cli.python.as_deref(), &repo_root.path)?;
@@ -99,6 +100,14 @@ pub(crate) fn run() -> Result<()> {
                 backend_command,
                 backend_args,
             )?;
+            let payload = prepare_json_payload(
+                &effective_cli,
+                payload,
+                matches!(
+                    command,
+                    crate::atom::cli_contract::DataCommands::ExportCsv { .. }
+                ),
+            );
             persist_stata_path_if_needed_json(&resolved_stata_path, &payload)?;
             render_json_payload(&payload)
         }

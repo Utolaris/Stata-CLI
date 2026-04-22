@@ -19,9 +19,10 @@
 ├── pyproject.toml           # Python package, Ruff, pytest, mypy config
 ├── uv.lock                  # Python lockfile
 ├── bin/                     # Repo-local built CLI binaries
+├── boilerplate/             # Workspace scaffold copied by `stata-cli init`
 ├── dist/                    # Release artifacts
 ├── logs/                    # Runtime logs and sample outputs
-├── rust-cli/                # Rust wrapper CLI crate
+├── rust-cli/                # Rust CLI, REPL, rendering, and workspace bootstrap
 │   ├── Cargo.toml
 │   ├── build.rs
 │   ├── src/main.rs
@@ -30,7 +31,7 @@
 │   └── grilic.dta
 ├── scripts/                 # Helper scripts for local maintenance
 ├── skills/                  # Codex skill content
-├── src/                     # Python backend, worker, parsing/filtering, compatibility shims
+├── src/                     # Python backend, worker, and compatibility shims
 │   ├── api_models.py
 │   ├── output_filter.py
 │   ├── session_manager.py
@@ -49,4 +50,6 @@
 - Prefer non-destructive verification first: `ruff check .`, `cargo fmt --check`, `cargo test`.
 - Real CLI smoke tests should run from `scene/` and use `scene/grilic.dta`.
 - When changing the REPL or CLI contract, verify both Python backend tests and Rust CLI tests.
+- `stata-cli init` now copies from repo-root `boilerplate/` into the current directory; treat `boilerplate/` as the scaffold source of truth.
+- Rust owns the public REPL, CLI output filtering, SMCL HTML rendering, and workspace bootstrap behavior.
 - This project needs to support both Windows and macOS; pay attention to differences in path separators and system commands.

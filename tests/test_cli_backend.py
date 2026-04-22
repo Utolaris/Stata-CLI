@@ -1,21 +1,20 @@
 #!/usr/bin/env python3
-"""
-Unit tests for the local Python backend used by the Rust CLI.
-"""
+"""Unit tests for the local Python backend used by the Rust CLI."""
 
+import io
+import json
 import tempfile
 from pathlib import Path
-
-from prompt_toolkit.buffer import Buffer
 
 import stata_cli_backend as backend
 from stata_cli.atom.runtime_state import RuntimeConfig
 from stata_cli.atom.session_manager import SessionState
+from stata_cli.coordinator import bridge_commander
 from stata_cli.molecule import data_ops, file_ops, selection_ops
 
 
 class DummyState:
-    def __init__(self, manager, *, multi_session: bool = True):
+    def __init__(self, manager, *, multi_session: bool = True, raw_output: bool = False):
         self._manager = manager
         self._config = RuntimeConfig(
             stata_path="/Applications/Stata",
@@ -23,6 +22,7 @@ class DummyState:
             log_level="WARNING",
             result_display_mode="full",
             max_output_tokens=10000,
+            raw_output=raw_output,
             multi_session=multi_session,
             max_sessions=100 if multi_session else 1,
             session_timeout=3600,
@@ -275,224 +275,149 @@ def test_data_export_csv_command_single_session(monkeypatch, tmp_path):
     assert 'export delimited using "' in captured["selection"]
 
 
-def test_init_workspace_command_creates_expected_scaffold(tmp_path):
-    target = tmp_path / "analysis"
+def test_run_selection_command_skips_python_filter_in_raw_mode(monkeypatch):
+    class DummyManager:
+        def execute(self, code, session_id=None, timeout=None):
+            return {"status": "success", "output": ". display 1+1\n2\n", "session_id": session_id or "default"}
 
-    result = backend.init_workspace_command(str(target))
+    monkeypatch.setattr(
+        selection_ops,
+        "get_runtime_state",
+        lambda: DummyState(DummyManager(), multi_session=False, raw_output=True),
+    )
+    monkeypatch.setattr(
+        selection_ops,
+        "process_output",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("process_output should not run")),
+    )
+
+    result = backend.run_selection_command("display 1+1", None, None)
+
+    assert result.status == "success"
+    assert result.output == ". display 1+1\n2\n"
+
+
+def test_run_file_command_skips_python_filter_in_raw_mode(monkeypatch, tmp_path):
+    log_path = str(tmp_path / "test.log")
+    do_path = str(tmp_path / "test.do")
+
+    class DummyManager:
+        def execute_file(self, *args, **kwargs):
+            return {
+                "status": "success",
+                "output": ". do test.do\nresult\n",
+                "session_id": "abc",
+                "log_file": log_path,
+                "extra": {"graphs": []},
+                "error": "",
+            }
+
+    monkeypatch.setattr(
+        file_ops,
+        "get_runtime_state",
+        lambda: DummyState(DummyManager(), multi_session=True, raw_output=True),
+    )
+    monkeypatch.setattr(file_ops, "resolve_do_file_path", lambda file_path: (file_path, []))
+    monkeypatch.setattr(file_ops, "get_log_file_path", lambda *args: log_path)
+    monkeypatch.setattr(
+        file_ops,
+        "process_output",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("process_output should not run")),
+    )
+
+    result = backend.run_file_command(do_path, 30, "abc", None)
+
+    assert result.status == "success"
+    assert result.output == ". do test.do\nresult\n"
+    assert result.log_file == log_path
+
+
+def test_data_export_csv_command_skips_python_filter_in_raw_mode(monkeypatch, tmp_path):
+    captured = {}
+
+    class DummyManager:
+        def execute(self, code, session_id=None, timeout=None):
+            captured["selection"] = code
+            return {"status": "success", "output": "raw export output", "session_id": session_id or "default"}
+
+    monkeypatch.setattr(
+        data_ops,
+        "get_runtime_state",
+        lambda: DummyState(DummyManager(), multi_session=False, raw_output=True),
+    )
+    monkeypatch.setattr(
+        data_ops,
+        "process_output",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("process_output should not run")),
+    )
+
+    input_dta = tmp_path / "sample.dta"
+    input_dta.write_text("placeholder", encoding="utf-8")
+    output_csv = tmp_path / "sample.csv"
+
+    result = backend.data_export_csv_command(
+        str(output_csv),
+        str(input_dta),
+        None,
+        str(tmp_path),
+        True,
+    )
 
     assert result["status"] == "success"
-    assert result["target_dir"] == str(target.resolve())
-    assert (target / "AGENTS.md").exists()
-    assert (target / "data").is_dir()
-    assert (target / "do" / "analysis.do").exists()
-    assert (target / "outputs").is_dir()
-    assert (target / "scripts" / "plot.py").exists()
-    assert not (target / "stata-packages.md").exists()
+    assert result["output"] == "raw export output"
+    assert 'export delimited using "' in captured["selection"]
 
 
-def test_init_workspace_command_writes_required_template_content(tmp_path):
-    target = tmp_path / "analysis"
-    backend.init_workspace_command(str(target))
+def test_bridge_command_routes_requests_to_backend(monkeypatch):
+    calls = []
 
-    agents_text = (target / "AGENTS.md").read_text(encoding="utf-8")
-    assert "Keep main Stata analysis in `do/analysis.do`." in agents_text
-    assert "Keep input datasets in `data/`." in agents_text
-    assert "Keep derived text results, exported tables, and generated files in `outputs/`." in agents_text
-    assert "stata-cli file do/analysis.do" in agents_text
-    assert "outputs/result.txt" in agents_text
-    assert "Python by default for final charts" in agents_text
-    assert "If the user explicitly wants Stata graphs" in agents_text
-    assert "which <command>" in agents_text
-    assert "Read the local `stata-cli` skill" in agents_text
+    def fake_run_selection_command(code, session_id, working_dir, timeout=None):
+        calls.append((code, session_id, working_dir, timeout))
+        return backend.ExecutionResult(
+            status="success",
+            output="bridge-result",
+            session_id=session_id,
+            log_file=None,
+            graphs=[],
+            error=None,
+        )
 
-    analysis_text = (target / "do" / "analysis.do").read_text(encoding="utf-8")
-    assert "capture log close" in analysis_text
-    assert "set more off" in analysis_text
-    assert 'log using "outputs/result.txt", text replace' in analysis_text
-    assert "display \"Run started:" in analysis_text
-    assert "display \"Working directory:" in analysis_text
-    assert "describe" in analysis_text
-    assert "summarize" in analysis_text
-    assert "log close" in analysis_text
-
-    plot_text = (target / "scripts" / "plot.py").read_text(encoding="utf-8")
-    assert "import matplotlib.pyplot as plt" in plot_text
-    assert "import pandas as pd" in plot_text
-    assert "import seaborn as sns" in plot_text
-    assert 'OUTPUTS_DIR / "plot.png"' in plot_text
-
-def test_init_workspace_command_errors_on_existing_scaffold_file(tmp_path):
-    target = tmp_path / "analysis"
-    target.mkdir()
-    existing = target / "AGENTS.md"
-    existing.write_text("existing\n", encoding="utf-8")
-
-    result = backend.init_workspace_command(str(target))
-
-    assert result["status"] == "error"
-    assert "Refusing to overwrite" in result["message"]
-    assert result["conflicts"] == [str(existing.resolve())]
-    assert existing.read_text(encoding="utf-8") == "existing\n"
-
-
-def test_lex_stata_line_highlights_basic_tokens():
-    fragments = backend._lex_stata_line('regress y x1 if x1 >= 1 // note')
-
-    assert ("class:command", "regress") in fragments
-    assert ("class:keyword", "if") in fragments
-    assert ("class:operator", ">=") in fragments
-    assert ("class:number", "1") in fragments
-    assert ("class:comment", "// note") in fragments
-
-
-def test_lex_stata_line_highlights_extended_stata_categories():
-    fragments = backend._lex_stata_line(
-        "reghdfe wage i.industry##c.age if missing(wage) | _rc > 0 local cutoff = c(level)"
+    monkeypatch.setattr(bridge_commander, "run_selection_command", fake_run_selection_command)
+    stdin = io.StringIO(
+        json.dumps({"command": "run", "code": "display 1+1", "working_dir": "/tmp/test", "timeout": 17})
+        + "\n"
+        + json.dumps({"command": "quit"})
+        + "\n"
     )
+    stdout = io.StringIO()
+    monkeypatch.setattr(bridge_commander.sys, "stdin", stdin)
+    monkeypatch.setattr(bridge_commander.sys, "stdout", stdout)
 
-    assert ("class:addon-command", "reghdfe") in fragments
-    assert ("class:factor", "i") in fragments
-    assert ("class:factor", "c") in fragments
-    assert ("class:function", "missing") in fragments
-    assert ("class:builtin-variable", "_rc") in fragments
-    assert ("class:macro-command", "local") in fragments
-    assert ("class:result-class", "c") in fragments
+    exit_code = bridge_commander.bridge_command("bridge-session", "/tmp/fallback")
 
-
-def test_lex_stata_line_preserves_full_input_for_unfinished_or_unknown_commands():
-    line = 'ssc install reghdfe `"unterminated'
-
-    fragments = backend._lex_stata_line(line)
-
-    assert "".join(text for _, text in fragments) == line
-    assert ("class:text", "ssc") in fragments
-    assert ("class:text", '`"') in fragments
+    assert exit_code == 0
+    assert calls == [("display 1+1", "bridge-session", "/tmp/test", 17)]
+    response = json.loads(stdout.getvalue().splitlines()[0])
+    assert response["status"] == "success"
+    assert response["output"] == "bridge-result"
+    assert response["session_id"] == "bridge-session"
 
 
-def test_format_repl_output_classifies_echo_numbers_notes_and_errors():
-    fragments = backend._format_repl_output(
-        ". display 2+3\n"
-        "5\n"
-        "note: dataset has changed since last save\n"
-        "warning: file will be replaced\n"
-        "invalid syntax\n"
-        "r(198);\n"
+def test_mock_bridge_command_returns_mocked_display_output(monkeypatch):
+    stdin = io.StringIO(
+        json.dumps({"command": "run", "code": "display 2+3", "working_dir": "/tmp/test"})
+        + "\n"
+        + json.dumps({"command": "quit"})
+        + "\n"
     )
+    stdout = io.StringIO()
+    monkeypatch.setattr(bridge_commander.sys, "stdin", stdin)
+    monkeypatch.setattr(bridge_commander.sys, "stdout", stdout)
 
-    assert ("class:echo-prompt", ". ") in fragments
-    assert ("class:command", "display") in fragments
-    assert ("class:result-number", "5") in fragments
-    assert ("class:note", "note: dataset has changed since last save") in fragments
-    assert ("class:warning", "warning: file will be replaced") in fragments
-    assert ("class:error", "invalid syntax") in fragments
-    assert ("class:return-code", "r(198);") in fragments
+    exit_code = bridge_commander.mock_bridge_command("bridge-session", "/tmp/fallback")
 
-
-def test_print_repl_result_omits_graph_and_log_metadata(capsys):
-    result = backend.ExecutionResult(
-        status="success",
-        output="regression output",
-        session_id="default",
-        log_file="/tmp/example.log",
-        graphs=[backend.GraphArtifact(name="g1", path="/tmp/g1.png", format="png")],
-        error=None,
-    )
-
-    backend._print_repl_result(result)
-
-    captured = capsys.readouterr()
-    assert "regression output" in captured.out
-    assert captured.err == ""
-
-
-def test_sanitize_repl_output_removes_internal_wrapper_noise():
-    raw_output = """-------------------------------------------------------------------------------
-      name:  <unnamed>
-       log:  /tmp/stata.log
-> _1776689348098.log
-  log type:  text
- opened on:  20 Apr 2026, 20:40:50
-
-. quietly set seed 917286971
-
-. display 2+3
-5
-
-. capture log close _all
-"""
-
-    cleaned = backend._sanitize_repl_output(raw_output)
-
-    assert "quietly set seed" not in cleaned
-    assert "capture log close _all" not in cleaned
-    assert "opened on:" not in cleaned
-    assert "> _1776689348098.log" not in cleaned
-    assert ". display 2+3" in cleaned
-    assert "5" in cleaned
-
-
-def test_print_repl_result_applies_repl_sanitizer(capsys):
-    result = backend.ExecutionResult(
-        status="success",
-        output=". quietly set seed 1\n. display 2+3\n5\n. capture log close _all\n",
-        session_id="default",
-        log_file=None,
-        graphs=[],
-        error=None,
-    )
-
-    backend._print_repl_result(result)
-
-    captured = capsys.readouterr()
-    assert "quietly set seed" not in captured.out
-    assert "capture log close _all" not in captured.out
-    assert ". display 2+3" in captured.out
-    assert "5" in captured.out
-
-
-def test_repl_edit_guards_do_not_delete_before_buffer_start():
-    buffer = Buffer()
-
-    backend._delete_before_cursor_if_possible(buffer)
-    backend._delete_under_cursor_if_possible(buffer)
-    backend._move_cursor_left_if_possible(buffer)
-    backend._move_cursor_to_start(buffer)
-
-    assert buffer.text == ""
-    assert buffer.cursor_position == 0
-
-
-def test_repl_edit_guards_only_modify_actual_user_input():
-    buffer = Buffer()
-    buffer.insert_text("ssc")
-
-    backend._move_cursor_to_start(buffer)
-    backend._delete_before_cursor_if_possible(buffer)
-    backend._move_cursor_left_if_possible(buffer)
-    assert buffer.text == "ssc"
-    assert buffer.cursor_position == 0
-
-    backend._delete_under_cursor_if_possible(buffer)
-    assert buffer.text == "sc"
-    assert buffer.cursor_position == 0
-
-
-def test_repl_delete_helpers_preserve_selection_deletion_behavior():
-    buffer = Buffer()
-    buffer.insert_text("ssc install")
-    buffer.cursor_position = 0
-    buffer.start_selection()
-    buffer.cursor_position = len(buffer.text)
-
-    backend._delete_before_cursor_if_possible(buffer)
-    assert buffer.text == ""
-    assert buffer.selection_state is None
-
-    buffer.insert_text("ssc install")
-    buffer.cursor_position = 0
-    buffer.start_selection()
-    buffer.cursor_position = len(buffer.text)
-
-    backend._delete_under_cursor_if_possible(buffer)
-    assert buffer.text == ""
-    assert buffer.selection_state is None
+    assert exit_code == 0
+    response = json.loads(stdout.getvalue().splitlines()[0])
+    assert response["status"] == "success"
+    assert response["output"] == ". display 2+3\n5\n"
+    assert response["session_id"] == "bridge-session"

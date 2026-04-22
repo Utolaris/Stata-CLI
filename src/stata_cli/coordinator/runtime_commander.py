@@ -26,6 +26,7 @@ def build_runtime_config(args) -> RuntimeConfig:
         log_level=(args.log_level or "WARNING").upper(),
         result_display_mode=args.result_display_mode or "compact",
         max_output_tokens=int(args.max_output_tokens if args.max_output_tokens is not None else 10000),
+        raw_output=bool(getattr(args, "raw_output", False)),
         multi_session=multi_session,
         max_sessions=max_sessions,
         session_timeout=int(args.session_timeout if args.session_timeout is not None else 3600),

@@ -54,9 +54,7 @@ pub(crate) enum Commands {
         #[arg(long)]
         working_dir: Option<PathBuf>,
     },
-    Init {
-        target_dir: PathBuf,
-    },
+    Init,
     Repl,
     Doctor,
     Data {

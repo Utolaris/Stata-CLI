@@ -16,6 +16,14 @@ pub(crate) struct ExecutionResult {
     pub(crate) error: Option<String>,
 }
 
+#[derive(Debug, Deserialize, Serialize)]
+pub(crate) struct BridgeRequest {
+    pub(crate) command: String,
+    pub(crate) code: Option<String>,
+    pub(crate) working_dir: Option<String>,
+    pub(crate) timeout: Option<u32>,
+}
+
 #[derive(Debug, Clone)]
 pub(crate) struct RepoRootResolution {
     pub(crate) path: PathBuf,

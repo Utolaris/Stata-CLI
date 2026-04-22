@@ -16,7 +16,9 @@ Do not load everything. Read only the 1-3 files relevant to the current task.
 For AI-driven work:
 
 ```bash
-stata-cli init ./my-analysis
+mkdir my-analysis
+cd my-analysis
+stata-cli init
 stata-cli file do/analysis.do
 stata-cli data view --input-dta /absolute/path/to/data.dta --max-rows 20
 stata-cli data export-csv --input-dta /absolute/path/to/data.dta --output /absolute/path/to/out.csv --replace
@@ -45,7 +47,9 @@ stata-cli repl
 
 ```bash
 stata-cli doctor
-stata-cli init ./my-analysis
+mkdir my-analysis
+cd my-analysis
+stata-cli init
 stata-cli run --code 'display 1+1'
 stata-cli file /absolute/path/to/script.do
 stata-cli data view --input-dta /absolute/path/to/data.dta --max-rows 20

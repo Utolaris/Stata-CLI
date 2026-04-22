@@ -28,6 +28,10 @@ pub(crate) fn backend_entry(repo_root: &Path) -> PathBuf {
         .join("backend_main.py")
 }
 
+pub(crate) fn boilerplate_dir(repo_root: &Path) -> PathBuf {
+    repo_root.join("boilerplate")
+}
+
 pub(crate) fn project_python(repo_root: &Path) -> PathBuf {
     if cfg!(windows) {
         repo_root.join(".venv").join("Scripts").join("python.exe")
@@ -75,6 +79,16 @@ pub(crate) fn absolutize_cli_path(path: &Path) -> Result<PathBuf> {
 
 pub(crate) fn windows_default_stata_path() -> PathBuf {
     PathBuf::from(r"C:\Program Files\Stata18")
+}
+
+pub(crate) fn repl_history_path() -> Option<PathBuf> {
+    if cfg!(windows) {
+        std::env::var_os("APPDATA")
+            .map(PathBuf::from)
+            .map(|dir| dir.join("stata-cli").join("repl_history.txt"))
+    } else {
+        home_dir().map(|home| home.join(".stata-cli").join("repl_history.txt"))
+    }
 }
 
 pub(crate) fn validate_stata_path(path: &Path) -> Result<()> {
