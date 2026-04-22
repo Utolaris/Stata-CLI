@@ -2,7 +2,7 @@
 """
 Pytest Configuration and Shared Fixtures
 
-This module provides shared fixtures for all tests in the stata-mcp project.
+This module provides shared fixtures for all tests in the stata-cli project.
 Fixtures are organized by category: configuration, mocking, and integration.
 """
 

@@ -1,4 +1,4 @@
-# Stata-MCP `run_selection` Parallel Test Report
+# Stata CLI `run_selection` Parallel Test Report
 
 **Date:** 2025-12-22
 **Test:** Parallel execution of `stata_run_selection` across 8 sessions

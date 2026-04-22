@@ -145,7 +145,7 @@ Read only the files relevant to the task. Paths are relative to this `SKILL.md`.
 ## Common failure reasons
 
 - `stata-cli` is not on `PATH`
-- Python 3.11 is missing or the repo `.venv` is broken
+- The uv-managed Python 3.11 environment in the repo `.venv` is missing or broken
 - Stata is not installed or `--stata-path` points to the wrong location
 - PyStata is unavailable in the chosen Python environment
 - The target `.do` or `.dta` path does not exist

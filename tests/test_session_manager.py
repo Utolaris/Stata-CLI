@@ -10,7 +10,7 @@ These tests verify:
 5. Worker health monitoring
 6. Backward compatibility (default session)
 
-Run with: python tests/test_session_manager.py
+Run with: uv run pytest tests/test_session_manager.py -v
 """
 
 import multiprocessing

@@ -7,8 +7,8 @@ from __future__ import annotations
 
 import os
 
-import stata_mcp
-import stata_worker
+from stata_cli.atom import worker_process
+from stata_cli.coordinator import runtime_commander
 from utils import default_stata_install_dir, find_stata_executable_path
 
 
@@ -85,9 +85,9 @@ def test_find_stata_executable_path_handles_windows_binaries():
 
 
 def test_worker_find_stata_executable_uses_shared_platform_logic(monkeypatch):
-    monkeypatch.setattr(stata_worker.platform, "system", lambda: "Darwin")
+    monkeypatch.setattr(worker_process.platform, "system", lambda: "Darwin")
     monkeypatch.setattr(
-        stata_worker,
+        worker_process,
         "find_stata_executable_path",
         lambda stata_path, stata_edition, system_name=None: os.path.join(
             stata_path,
@@ -97,17 +97,33 @@ def test_worker_find_stata_executable_uses_shared_platform_logic(monkeypatch):
         ),
     )
 
-    executable = stata_worker.find_stata_executable("/Applications/StataMP.app", "mp")
+    executable = worker_process.find_stata_executable("/Applications/StataMP.app", "mp")
 
     assert executable == os.path.join("/Applications/StataMP.app", "Contents", "MacOS", "StataMP")
 
 
-def test_native_mcp_default_path_detection_uses_shared_logic(monkeypatch):
-    monkeypatch.setattr(stata_mcp.sys, "platform", "darwin")
+def test_runtime_commander_uses_shared_default_path_logic(monkeypatch):
     monkeypatch.setattr(
-        stata_mcp,
+        runtime_commander,
         "default_stata_install_dir",
-        lambda system_name=None: "/Applications/StataNow",
+        lambda: "/Applications/StataNow",
     )
 
-    assert stata_mcp._detect_default_stata_path() == "/Applications/StataNow"
+    args = type(
+        "Args",
+        (),
+        {
+            "stata_path": None,
+            "stata_edition": None,
+            "log_level": None,
+            "result_display_mode": None,
+            "max_output_tokens": None,
+            "multi_session": None,
+            "max_sessions": None,
+            "session_timeout": None,
+        },
+    )()
+
+    config = runtime_commander.build_runtime_config(args)
+
+    assert config.stata_path == "/Applications/StataNow"

@@ -309,8 +309,12 @@ fn persist_resolved_stata_path(path: &Path) -> Result<()> {
     write_cli_config(&config_path, &config)
 }
 
-fn backend_script(repo_root: &Path) -> PathBuf {
-    repo_root.join("src").join("stata_cli_backend.py")
+fn backend_entry(repo_root: &Path) -> PathBuf {
+    repo_root
+        .join("src")
+        .join("stata_cli")
+        .join("entry")
+        .join("backend_main.py")
 }
 
 fn project_python(repo_root: &Path) -> PathBuf {
@@ -322,7 +326,7 @@ fn project_python(repo_root: &Path) -> PathBuf {
 }
 
 fn is_repo_root(path: &Path) -> bool {
-    path.join("pyproject.toml").exists() && backend_script(path).exists()
+    path.join("pyproject.toml").exists() && backend_entry(path).exists()
 }
 
 fn discover_repo_root_from(start: &Path) -> Option<PathBuf> {
@@ -749,10 +753,27 @@ fn base_backend_cli_args(cli: &Cli, include_json: bool) -> Vec<OsString> {
     args
 }
 
-fn base_backend_args(repo_root: &Path, cli: &Cli, include_json: bool) -> Vec<OsString> {
-    let mut args = vec![backend_script(repo_root).into_os_string()];
+fn base_backend_args(cli: &Cli, include_json: bool) -> Vec<OsString> {
+    let mut args = vec![
+        OsString::from("-m"),
+        OsString::from("stata_cli.entry.backend_main"),
+    ];
     args.extend(base_backend_cli_args(cli, include_json));
     args
+}
+
+fn configure_pythonpath(command: &mut Command, repo_root: &Path) {
+    let src_dir = repo_root.join("src");
+    let separator = if cfg!(windows) { ";" } else { ":" };
+    let mut value = src_dir.to_string_lossy().to_string();
+    if let Some(existing) = std::env::var_os("PYTHONPATH") {
+        let existing_rendered = existing.to_string_lossy();
+        if !existing_rendered.is_empty() {
+            value.push_str(separator);
+            value.push_str(&existing_rendered);
+        }
+    }
+    command.env("PYTHONPATH", value);
 }
 
 fn session_args(cli: &Cli) -> Vec<OsString> {
@@ -848,15 +869,15 @@ fn invoke_backend_json(
     command: &str,
     mut command_args: Vec<OsString>,
 ) -> Result<Value> {
-    let backend = backend_script(repo_root);
+    let backend = backend_entry(repo_root);
     if !backend.exists() {
         bail!(
-            "Python backend not found at {}. Reinstall from the project root or update the CLI config.",
+            "Python backend entrypoint not found at {}. Reinstall from the project root or update the CLI config.",
             backend.display()
         );
     }
 
-    let mut args = base_backend_args(repo_root, cli, true);
+    let mut args = base_backend_args(cli, true);
     args.push(OsString::from(command));
     args.append(&mut command_args);
     if command != "init" {
@@ -870,9 +891,10 @@ fn invoke_backend_json(
         }
     }
 
-    let output = Command::new(python)
-        .args(&args)
-        .current_dir(repo_root)
+    let mut command = Command::new(python);
+    command.args(&args).current_dir(repo_root);
+    configure_pythonpath(&mut command, repo_root);
+    let output = command
         .output()
         .with_context(|| format!("Failed to launch backend with {}", python.display()))?;
 
@@ -956,22 +978,25 @@ fn backend_command_available(command: &str) -> bool {
 }
 
 fn spawn_repl(python: &Path, repo_root: &Path, cli: &Cli) -> Result<ExitStatus> {
-    let backend = backend_script(repo_root);
+    let backend = backend_entry(repo_root);
     if !backend.exists() {
         bail!("Python backend not found at {}", backend.display());
     }
 
-    let mut args = base_backend_args(repo_root, cli, false);
+    let mut args = base_backend_args(cli, false);
     args.push(OsString::from("repl"));
     args.extend(session_args(cli));
 
-    Command::new(python)
+    let mut command = Command::new(python);
+    command
         .args(&args)
         .current_dir(repo_root)
         .env("STATA_CLI_REPL_MODE", "1")
         .stdin(Stdio::inherit())
         .stdout(Stdio::inherit())
-        .stderr(Stdio::inherit())
+        .stderr(Stdio::inherit());
+    configure_pythonpath(&mut command, repo_root);
+    command
         .status()
         .with_context(|| "Failed to launch interactive backend".to_string())
 }
@@ -1013,7 +1038,7 @@ fn doctor_command(
     resolved_stata_path: &ResolvedStataPath,
 ) -> Result<()> {
     let config_path = default_config_path();
-    let backend = backend_script(&repo_root.path);
+    let backend = backend_entry(&repo_root.path);
     let mut checks = Vec::new();
 
     checks.push(DoctorCheck {
@@ -1159,14 +1184,17 @@ mod tests {
     use std::os::unix::fs::PermissionsExt;
 
     fn make_repo(dir: &Path) {
-        fs::create_dir_all(dir.join("src")).unwrap();
+        fs::create_dir_all(dir.join("src").join("stata_cli").join("entry")).unwrap();
         fs::write(
             dir.join("pyproject.toml"),
             "[project]\nname = 'stata-cli'\n",
         )
         .unwrap();
         fs::write(
-            dir.join("src").join("stata_cli_backend.py"),
+            dir.join("src")
+                .join("stata_cli")
+                .join("entry")
+                .join("backend_main.py"),
             "print('ok')\n",
         )
         .unwrap();
@@ -1307,7 +1335,7 @@ mod tests {
     }
 
     #[test]
-    fn base_backend_cli_args_excludes_backend_script_path() {
+    fn base_backend_cli_args_use_module_entrypoint() {
         let cli = Cli::parse_from([
             "stata-cli",
             "--stata-path",
@@ -1317,9 +1345,11 @@ mod tests {
             "doctor",
         ]);
 
-        let args = base_backend_cli_args(&cli, true);
+        let args = base_backend_args(&cli, true);
         assert!(args.iter().any(|arg| arg == "--stata-path"));
         assert!(args.iter().any(|arg| arg == "--json"));
+        assert!(args.iter().any(|arg| arg == "-m"));
+        assert!(args.iter().any(|arg| arg == "stata_cli.entry.backend_main"));
         assert!(!args
             .iter()
             .any(|arg| arg.to_string_lossy().contains("stata_cli_backend.py")));

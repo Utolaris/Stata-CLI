@@ -8,8 +8,7 @@ These tests verify the bugs fixed on 2025-12-22 don't regress:
 3. Single SetBreak call to prevent SIGSEGV crashes
 4. First execution after stop returns correct result
 
-Run with: python tests/test_stop_execution.py
-Or: pytest tests/test_stop_execution.py -v
+Run with: uv run pytest tests/test_stop_execution.py -v
 """
 
 import os

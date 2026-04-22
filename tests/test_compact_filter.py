@@ -107,7 +107,7 @@ def apply_compact_mode_filter(output: str, filter_command_echo: bool = False) ->
     command_echo_pattern = re.compile(r'^\.\s*$|^\.\s+\S')
     numbered_line_pattern = re.compile(r'^\s*\d+\.\s')
     continuation_pattern = re.compile(r'^>\s')
-    mcp_header_pattern = re.compile(r'^>>>\s+\[\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}\]')
+    cli_header_pattern = re.compile(r'^>>>\s+\[\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}\]')
     exec_time_pattern = re.compile(r'^\*\*\*\s+Execution completed in')
     final_output_pattern = re.compile(r'^Final output:\s*$')
     log_info_pattern = re.compile(r'^\s*(name:|log:|log type:|opened on:|closed on:|Log file saved to:)', re.IGNORECASE)
@@ -233,7 +233,7 @@ def apply_compact_mode_filter(output: str, filter_command_echo: bool = False) ->
 
         # Command echo filtering
         if filter_command_echo:
-            if mcp_header_pattern.match(line):
+            if cli_header_pattern.match(line):
                 i += 1
                 continue
             if exec_time_pattern.match(line):

@@ -1,5 +1,5 @@
 * =============================================================================
-* Long-running test file for stata-mcp 8 parallel sessions
+* Long-running test file for stata-cli 8 parallel sessions
 * =============================================================================
 
 * Capture session start

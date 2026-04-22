@@ -7,7 +7,7 @@ gen x = _n
 gen y1 = _n + rnormal()
 gen y2 = _n + 2 + rnormal()
 
-* This is what the MCP server is creating (INCORRECT - name inside plot spec)
+* This is what the old backend wrapper was creating (INCORRECT - name inside plot spec)
 * twoway (scatter y1 x, name(graph1, replace) mcolor(blue)) ///
 *     (scatter y2 x, mcolor(red)), title("Test Graph")
 

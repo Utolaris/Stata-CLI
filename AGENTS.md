@@ -5,7 +5,7 @@
 `stata-cli` is a local Stata CLI project with:
 
 - a Rust frontend CLI in `rust-cli/`
-- a Python backend and MCP implementation in `src/`
+- a Python backend implementation in `src/`
 - automated tests in `tests/`
 - repo-local binaries in `bin/`
 - a real test scene in `scene/`
@@ -30,14 +30,13 @@
 │   └── grilic.dta
 ├── scripts/                 # Helper scripts for local maintenance
 ├── skills/                  # Codex skill content
-├── src/                     # Python backend, worker, MCP server, parsing/filtering
+├── src/                     # Python backend, worker, parsing/filtering, compatibility shims
 │   ├── api_models.py
 │   ├── output_filter.py
 │   ├── session_manager.py
 │   ├── smcl_parser.py
+│   ├── stata_cli/
 │   ├── stata_cli_backend.py
-│   ├── stata_mcp.py
-│   ├── stata_mcp_server.py
 │   ├── stata_worker.py
 │   └── utils.py
 └── tests/                   # Python tests, fixtures, and integration helpers
@@ -45,7 +44,7 @@
 
 ## Working Rules
 
-- Use Python 3.11 from the repo `.venv`.
+- Use the uv-managed Python 3.11 environment from the repo `.venv`.
 - Keep the Rust binary in `bin/` so repo-root discovery continues to work.
 - Prefer non-destructive verification first: `ruff check .`, `cargo fmt --check`, `cargo test`.
 - Real CLI smoke tests should run from `scene/` and use `scene/grilic.dta`.

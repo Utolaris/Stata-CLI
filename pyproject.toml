@@ -13,8 +13,6 @@ keywords = ["stata", "cli", "ai", "codex", "claude code"]
 dependencies = [
     "fastapi>=0.119.0",
     "uvicorn>=0.38.0",
-    "fastapi-mcp>=0.4.0",
-    "mcp>=1.23.0",
     "pydantic>=2.11.0",
     "pandas>=2.0.0",
     "httpx>=0.28.0",
@@ -23,9 +21,7 @@ dependencies = [
 ]
 
 [project.scripts]
-stata-mcp = "stata_mcp:main"
-stata-mcp-http = "stata_mcp_server:main"
-stata-cli-backend = "stata_cli_backend:main"
+stata-cli-backend = "stata_cli.entry.backend_main:main"
 
 [project.optional-dependencies]
 dev = [
@@ -46,13 +42,16 @@ py-modules = [
     "api_models",
     "output_filter",
     "session_manager",
-    "smcl_parser",
     "stata_cli_backend",
-    "stata_mcp",
-    "stata_mcp_server",
     "stata_worker",
     "utils",
 ]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+"stata_cli" = ["py.typed"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

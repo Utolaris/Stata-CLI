@@ -9,13 +9,37 @@ from pathlib import Path
 from prompt_toolkit.buffer import Buffer
 
 import stata_cli_backend as backend
+from stata_cli.atom.runtime_state import RuntimeConfig
+from stata_cli.molecule import data_ops, file_ops, selection_ops
+
+
+class DummyState:
+    def __init__(self, manager, *, multi_session: bool = True):
+        self._manager = manager
+        self._config = RuntimeConfig(
+            stata_path="/Applications/Stata",
+            stata_edition="mp",
+            log_level="WARNING",
+            result_display_mode="full",
+            max_output_tokens=10000,
+            multi_session=multi_session,
+            max_sessions=100 if multi_session else 1,
+            session_timeout=3600,
+        )
+
+    def active_config(self):
+        return self._config
+
+    def active_session_manager(self):
+        return self._manager
 
 
 def test_run_selection_command_single_session(monkeypatch):
-    monkeypatch.setattr(backend.legacy, "multi_session_enabled", False)
-    monkeypatch.setattr(backend.legacy, "session_manager", None)
-    monkeypatch.setattr(backend.legacy, "run_stata_selection", lambda selection, working_dir, auto_detect: "result line")
-    monkeypatch.setattr(backend.legacy, "process_mcp_output", lambda output, **kwargs: output)
+    class DummyManager:
+        def execute(self, code, session_id=None, timeout=None):
+            return {"status": "success", "output": "result line", "session_id": session_id or "default"}
+
+    monkeypatch.setattr(selection_ops, "get_runtime_state", lambda: DummyState(DummyManager(), multi_session=False))
 
     result = backend.run_selection_command("display 1+1", None, None)
 
@@ -41,18 +65,17 @@ def test_run_file_command_multi_session(monkeypatch):
                 "error": "",
             }
 
-    monkeypatch.setattr(backend.legacy, "multi_session_enabled", True)
-    monkeypatch.setattr(backend.legacy, "session_manager", DummyManager())
-    monkeypatch.setattr(backend.legacy, "resolve_do_file_path", lambda file_path: (file_path, []))
-    monkeypatch.setattr(backend.legacy, "get_log_file_path", lambda *args: log_path)
-    monkeypatch.setattr(backend.legacy, "process_mcp_output", lambda output, **kwargs: output)
+    monkeypatch.setattr(file_ops, "get_runtime_state", lambda: DummyState(DummyManager(), multi_session=True))
+    monkeypatch.setattr(file_ops, "resolve_do_file_path", lambda file_path: (file_path, []))
+    monkeypatch.setattr(file_ops, "get_log_file_path", lambda *args: log_path)
 
     result = backend.run_file_command(do_path, 30, "abc", None)
 
     assert result.status == "success"
     assert result.output == "file output"
     assert result.log_file == log_path
-    assert result.graphs == []
+    assert result.graphs[0].name == "g1"
+    assert result.graphs[0].path.endswith("g1.png")
 
 
 def test_data_view_command_multi_session(monkeypatch):
@@ -73,8 +96,7 @@ def test_data_view_command_multi_session(monkeypatch):
                 "index": [0],
             }
 
-    monkeypatch.setattr(backend.legacy, "multi_session_enabled", True)
-    monkeypatch.setattr(backend.legacy, "session_manager", DummyManager())
+    monkeypatch.setattr(data_ops, "get_runtime_state", lambda: DummyState(DummyManager(), multi_session=True))
 
     result = backend.data_view_command("abc", "x > 0", 250, None)
 
@@ -108,15 +130,14 @@ def test_data_view_command_with_input_dta(monkeypatch, tmp_path):
     input_dta = tmp_path / "sample.dta"
     input_dta.write_text("placeholder", encoding="utf-8")
 
-    monkeypatch.setattr(backend.legacy, "multi_session_enabled", True)
-    monkeypatch.setattr(backend.legacy, "session_manager", DummyManager())
+    monkeypatch.setattr(data_ops, "get_runtime_state", lambda: DummyState(DummyManager(), multi_session=True))
 
     result = backend.data_view_command("abc", "x > 0", 250, str(input_dta))
 
     assert result["status"] == "success"
     assert result["columns"] == ["x", "y"]
     assert result["max_rows"] == 250
-    assert result["source_dta"] == str(input_dta)
+    assert result["source_dta"] == str(input_dta.resolve())
     assert 'use "' in captured["code"]
 
 
@@ -135,8 +156,7 @@ def test_data_view_command_respects_small_max_rows(monkeypatch):
                 "index": [],
             }
 
-    monkeypatch.setattr(backend.legacy, "multi_session_enabled", True)
-    monkeypatch.setattr(backend.legacy, "session_manager", DummyManager())
+    monkeypatch.setattr(data_ops, "get_runtime_state", lambda: DummyState(DummyManager(), multi_session=True))
 
     result = backend.data_view_command(None, None, 5, None)
 
@@ -156,15 +176,12 @@ def test_build_parser_sets_agent_friendly_data_view_default():
 def test_data_export_csv_command_single_session(monkeypatch, tmp_path):
     captured = {}
 
-    def fake_run_stata_selection(selection, working_dir, auto_detect):
-        captured["selection"] = selection
-        captured["working_dir"] = working_dir
-        return "ok"
+    class DummyManager:
+        def execute(self, code, session_id=None, timeout=None):
+            captured["selection"] = code
+            return {"status": "success", "output": "ok", "session_id": session_id or "default"}
 
-    monkeypatch.setattr(backend.legacy, "multi_session_enabled", False)
-    monkeypatch.setattr(backend.legacy, "session_manager", None)
-    monkeypatch.setattr(backend.legacy, "run_stata_selection", fake_run_stata_selection)
-    monkeypatch.setattr(backend.legacy, "process_mcp_output", lambda output, **kwargs: output)
+    monkeypatch.setattr(data_ops, "get_runtime_state", lambda: DummyState(DummyManager(), multi_session=False))
 
     input_dta = tmp_path / "sample.dta"
     input_dta.write_text("placeholder", encoding="utf-8")

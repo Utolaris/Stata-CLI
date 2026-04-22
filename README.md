@@ -120,7 +120,7 @@ stata-cli doctor
 ```
 
 - Check repo root resolution
-- Check backend script presence
+- Check backend entrypoint presence
 - Check the uv-managed Python 3.11 environment
 - Run a minimal backend probe
 
@@ -190,4 +190,4 @@ MIT
 
 ## Acknowledgements
 
-This project was inspired by the design of [stata-mcp](https://github.com/hanlulong/stata-mcp). Thanks to the original project for the ideas and structure it provided.
+This project benefits from prior experimentation in AI-oriented Stata tooling and from the broader PyStata ecosystem.
