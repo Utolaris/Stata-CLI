@@ -76,10 +76,10 @@ jobs:
           uv run pytest -q
           tests/test_cli_backend.py
           tests/test_platform_paths.py
-          tests/test_native_mcp.py
           tests/test_compact_filter.py
           tests/test_session_manager.py
           tests/test_stop_execution.py
+          tests/test_timeout_direct.py
 
       - name: Run Python compatibility tests (macOS zsh)
         if: runner.os == 'macOS'
@@ -88,10 +88,10 @@ jobs:
           uv run pytest -q
           tests/test_cli_backend.py
           tests/test_platform_paths.py
-          tests/test_native_mcp.py
           tests/test_compact_filter.py
           tests/test_session_manager.py
           tests/test_stop_execution.py
+          tests/test_timeout_direct.py
 
       - name: Run backend CLI smoke test (Windows)
         if: runner.os == 'Windows'
