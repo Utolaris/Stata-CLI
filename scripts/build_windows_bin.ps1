@@ -15,6 +15,12 @@ try {
     Write-Error "[build_windows_bin] cargo-zigbuild is required. Install it with: cargo install cargo-zigbuild --locked"
 }
 
+$installedTargets = rustup target list --installed
+if ($installedTargets -notcontains $targetTriple) {
+    Write-Host "[build_windows_bin] Installing Rust target $targetTriple..."
+    rustup target add $targetTriple
+}
+
 Write-Host "[build_windows_bin] Building Rust CLI for Windows target $targetTriple..."
 cargo zigbuild --release --target $targetTriple --manifest-path $manifestPath
 

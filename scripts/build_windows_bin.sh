@@ -15,6 +15,11 @@ if ! cargo zigbuild --help >/dev/null 2>&1; then
   exit 1
 fi
 
+if ! rustup target list --installed | grep -qx "$target_triple"; then
+  echo "[build_windows_bin] Installing Rust target $target_triple..."
+  rustup target add "$target_triple"
+fi
+
 echo "[build_windows_bin] Building Rust CLI for Windows target $target_triple..."
 cargo zigbuild --release --target "$target_triple" --manifest-path "$manifest_path"
 

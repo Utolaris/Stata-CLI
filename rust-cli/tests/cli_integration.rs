@@ -45,6 +45,17 @@ fn normalize_windows_path(path: &Path) -> String {
     }
 }
 
+fn assert_same_path(actual: &Value, expected: &Path) {
+    let actual_path = PathBuf::from(actual.as_str().expect("path value should be a string"));
+    let resolved_actual = std::fs::canonicalize(&actual_path).unwrap_or(actual_path);
+    let resolved_expected =
+        std::fs::canonicalize(expected).unwrap_or_else(|_| expected.to_path_buf());
+    assert_eq!(
+        normalize_windows_path(&resolved_actual),
+        normalize_windows_path(&resolved_expected)
+    );
+}
+
 #[test]
 fn run_command_round_trips_through_python_backend() {
     let temp = tempdir().unwrap();
@@ -153,7 +164,7 @@ fn init_command_creates_agent_workspace_scaffold() {
     let json: Value = serde_json::from_slice(&output.stdout).unwrap();
     let resolved_target = std::fs::canonicalize(&target).unwrap();
     assert_eq!(json["status"], "success");
-    assert_eq!(json["target_dir"], normalize_windows_path(&resolved_target));
+    assert_same_path(&json["target_dir"], &resolved_target);
     assert!(target.join("AGENTS.md").exists());
     assert!(target.join("data").is_dir());
     assert!(target.join("do").join("analysis.do").exists());
@@ -184,7 +195,7 @@ fn init_command_overwrites_existing_scaffold_file() {
     let json: Value = serde_json::from_slice(&output.stdout).unwrap();
     let resolved_target = std::fs::canonicalize(&target).unwrap();
     assert_eq!(json["status"], "success");
-    assert_eq!(json["target_dir"], normalize_windows_path(&resolved_target));
+    assert_same_path(&json["target_dir"], &resolved_target);
     let agents_text = std::fs::read_to_string(target.join("AGENTS.md")).unwrap();
     assert!(agents_text.contains("Keep main Stata analysis in `do/analysis.do`."));
 }
