@@ -4,7 +4,7 @@
 
 This repo is designed so an AI agent can quickly understand the project, install the right dependencies, bootstrap an analysis workspace, and run Stata locally without needing VS Code.
 
-This CLI provides a REPL that allows users to run Stata commands from any directory and supports syntax highlighting; it is designed for human use, not direct AI use.
+This CLI also provides a standalone REPL for human exploration, with syntax highlighting and code completion.
 
 ## Install
 
@@ -80,6 +80,18 @@ stata-cli doctor
 
 ## Capabilities
 
+`stata-cli` is designed to make local Stata work easier for AI agents and humans:
+
+- Run inline Stata commands with `stata-cli run`
+- Execute `.do` files with `stata-cli file`
+- Inspect and export `.dta` data with `stata-cli data view` and `stata-cli data export-csv`
+- Diagnose the local Python/Stata backend with `stata-cli doctor`
+- Bootstrap an AI-friendly project scaffold with `stata-cli init`
+- Use the bundled `skills/stata-cli/` guidance to help AI agents write safer, more idiomatic Stata code
+- Use the standalone `stata-cli repl` for human interactive work, including syntax highlighting and code completion
+
+Non-REPL commands are intentionally AI-friendly: they return structured JSON and avoid dumping unnecessary terminal noise into stdout.
+
 ### Initialize an AI-ready workspace
 
 ```bash
@@ -88,9 +100,7 @@ cd my-analysis
 stata-cli init
 ```
 
-- Copy the repo-root `boilerplate/` scaffold into the current working directory
-- Generate `AGENTS.md`, `data/`, `do/`, `outputs/`, `scripts/`, `do/analysis.do`, and `scripts/plot.py`
-- Overwrite existing scaffold files silently so users can customize and re-apply the boilerplate
+`stata-cli init` copies the repo-root `boilerplate/` scaffold into the current directory, giving each analysis project a predictable structure for data, Stata code, outputs, helper scripts, and agent instructions.
 
 ### Run Stata code
 
@@ -98,9 +108,7 @@ stata-cli init
 stata-cli run --code 'display 1+1'
 ```
 
-- Execute inline Stata code
-- Pass `--working-dir`, `--timeout`, `--stata-path`, and `--stata-edition` when needed
-- Non-REPL commands always return structured JSON
+Use this for short inline commands. The response is structured JSON, so AI agents can reliably inspect status, output, logs, and errors.
 
 ### Run a `.do` file
 
@@ -108,19 +116,15 @@ stata-cli run --code 'display 1+1'
 stata-cli file /absolute/path/to/script.do
 ```
 
-- Execute local `.do` files
-- Return output, effective session id, log path, and graph artifacts when available
+Use this for substantial Stata analysis. It is the preferred path for agent-driven work because code, logs, and generated files stay inside the project workspace.
 
-### Start a minimal REPL
+### Start the REPL
 
 ```bash
 stata-cli repl
 ```
 
-- Run one Stata command at a time in a human-oriented interactive shell
-- Prefer this for quick manual exploration instead of AI workflows
-- Can run from any directory when `stata-cli-backend` is available on `PATH`, or when you pass `--python` to a Python 3.11 environment with the backend installed
-- Uses the native Rust REPL with a Stata-style prompt, syntax highlighting, continuation handling, and filtered output without extra CLI log noise
+The REPL is a separate human-oriented interface with a Stata-style prompt, syntax highlighting, code completion, continuation handling, and filtered output.
 
 ### Diagnose the local environment
 
@@ -128,12 +132,9 @@ stata-cli repl
 stata-cli doctor
 ```
 
-- Check repo root resolution
-- Check backend entrypoint presence
-- Check the uv-managed Python 3.11 environment
-- Run a minimal backend probe
+Use `doctor` to confirm that the repo-local Rust CLI, Python backend, and Stata installation can talk to each other.
 
-### Preview data
+### Work with data
 
 ```bash
 stata-cli data view --input-dta /absolute/path/to/data.dta --max-rows 20
@@ -141,11 +142,7 @@ stata-cli data view --if-condition 'iq > 110' --max-rows 10
 stata-cli data view
 ```
 
-- Preview rows from the current dataset
-- Preview rows directly from a `.dta` file with `--input-dta`
-- Filter with `--if-condition`
-- Limit rows with `--max-rows`
-- Default to `50` rows so AI agents do not dump large tables into chat context
+Use `data view` for small previews and schema checks. It defaults to limited output so agents do not waste context on large tables.
 
 ## AI-first workflow
 
@@ -163,7 +160,7 @@ Then keep the working pattern simple:
 - Include `capture log close` and `set more off`
 - Write full text output to `outputs/result.txt`
 - Run the analysis with `stata-cli file do/analysis.do`
-- Use the JSON response only to inspect `status`, `error`, `log_file`, and `graphs`
+- Use the JSON response to inspect `status`, `error`, `partial_failures`, `log_file`, and `graphs`
 - Use `data view` for schema checks and small previews, not full table dumps
 - Use Python scripts under `scripts/` for final charts saved into `outputs/`
 - If the user explicitly wants Stata graphs, write explicit `graph export "outputs/..."` commands in the `.do` file instead of relying on CLI graph capture

@@ -620,7 +620,8 @@ capture log close _all
             with OutputCapture() as capture:
                 stata.run(wrapped_code, echo=True, inline=False)
 
-            output = capture.get_output()
+            captured_output = capture.get_output()
+            output = captured_output
             execution_time = time.time() - start_time
             worker_state = WorkerState.READY
 
@@ -629,9 +630,13 @@ capture log close _all
                 try:
                     with open(log_file, encoding='utf-8', errors='replace') as f:
                         log_output = f.read()
-                    # Use log file content as primary output (more reliable for streaming)
                     if log_output.strip():
-                        output = log_output
+                        if captured_output.strip() and log_output in captured_output:
+                            output = captured_output
+                        elif captured_output.strip() and captured_output not in log_output:
+                            output = f"{log_output}\n{captured_output}"
+                        else:
+                            output = log_output
                 except Exception:
                     pass  # Fall back to captured output
 

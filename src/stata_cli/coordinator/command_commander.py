@@ -12,7 +12,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from ..atom.contracts import ExecutionResult
+from ..atom.contracts import ExecutionResult, PartialFailure
 from ..coordinator.bridge_commander import bridge_command, mock_bridge_command
 from ..coordinator.repl_commander import repl_command
 from ..coordinator.runtime_commander import (
@@ -144,12 +144,23 @@ def mock_result_from_args(args: argparse.Namespace) -> ExecutionResult | dict[st
     if args.command == "file":
         file_name = os.path.basename(args.file_path)
         temp_dir = tempfile.gettempdir()
+        partial_failures = []
+        if os.getenv("STATA_CLI_BACKEND_TEST_PARTIAL_FAILURE", "").strip():
+            partial_failures.append(
+                PartialFailure(
+                    line=2,
+                    command="capture noisily esttab ols using st_reg.rtf, replace",
+                    return_code="r(199)",
+                    message="command esttab is unrecognized",
+                )
+            )
         return ExecutionResult(
             status="success",
             output=f"mock-file file={file_name} working_dir={working_dir} timeout={args.timeout}",
             session_id=presented_session_id,
             log_file=os.path.join(temp_dir, f"{os.path.splitext(file_name)[0]}.log"),
             graphs=[],
+            partial_failures=partial_failures,
             error=None,
         )
 

@@ -152,6 +152,46 @@ def test_run_file_command_multi_session(monkeypatch):
     assert result.graphs[0].path.endswith("g1.png")
 
 
+def test_run_file_command_reports_partial_failures_from_successful_log(monkeypatch):
+    temp_dir = tempfile.gettempdir()
+    log_path = str(Path(temp_dir) / "test.log")
+    do_path = str(Path(temp_dir) / "test.do")
+    raw_output = """
+. regress y x
+
+. capture noisily esttab ols using st_reg.rtf, replace
+command esttab is unrecognized
+r(199);
+
+. display "analysis completed"
+analysis completed
+"""
+
+    class DummyManager:
+        def execute_file(self, *args, **kwargs):
+            return {
+                "status": "success",
+                "output": raw_output,
+                "session_id": "abc",
+                "log_file": log_path,
+                "extra": {"graphs": []},
+                "error": "",
+            }
+
+    monkeypatch.setattr(file_ops, "get_runtime_state", lambda: DummyState(DummyManager(), multi_session=True))
+    monkeypatch.setattr(file_ops, "resolve_do_file_path", lambda file_path: (file_path, []))
+    monkeypatch.setattr(file_ops, "get_log_file_path", lambda *args: log_path)
+
+    result = backend.run_file_command(do_path, 30, "abc", None)
+
+    assert result.status == "success"
+    assert len(result.partial_failures) == 1
+    failure = result.partial_failures[0]
+    assert failure.command == "capture noisily esttab ols using st_reg.rtf, replace"
+    assert failure.return_code == "r(199)"
+    assert failure.message == "command esttab is unrecognized"
+
+
 def test_data_view_command_multi_session(monkeypatch):
     class DummyManager:
         def execute(self, code, session_id=None):

@@ -157,6 +157,35 @@ fn file_command_returns_structured_python_artifacts() {
 }
 
 #[test]
+fn file_command_preserves_partial_failures_from_python_backend() {
+    let temp = tempdir().unwrap();
+    let do_file = temp.path().join("sample.do");
+    std::fs::write(&do_file, "display 1+1\n").unwrap();
+
+    let output = base_command()
+        .env("STATA_CLI_BACKEND_TEST_PARTIAL_FAILURE", "1")
+        .arg("file")
+        .arg(&do_file)
+        .arg("--working-dir")
+        .arg(temp.path())
+        .output()
+        .unwrap();
+
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let json: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(json["status"], "success");
+    let failures = json["partial_failures"].as_array().unwrap();
+    assert_eq!(failures.len(), 1);
+    assert_eq!(failures[0]["return_code"], "r(199)");
+    assert_eq!(failures[0]["message"], "command esttab is unrecognized");
+}
+
+#[test]
 fn doctor_command_checks_python_backend_probe() {
     let output = base_command().arg("doctor").output().unwrap();
 

@@ -7,12 +7,23 @@ pub(crate) struct GraphArtifact {
 }
 
 #[derive(Debug, Deserialize, Serialize)]
+pub(crate) struct PartialFailure {
+    pub(crate) line: Option<u32>,
+    pub(crate) command: Option<String>,
+    pub(crate) return_code: Option<String>,
+    pub(crate) message: String,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
 pub(crate) struct ExecutionResult {
     pub(crate) status: String,
     pub(crate) output: String,
     pub(crate) session_id: Option<String>,
     pub(crate) log_file: Option<String>,
+    #[serde(default)]
     pub(crate) graphs: Vec<GraphArtifact>,
+    #[serde(default)]
+    pub(crate) partial_failures: Vec<PartialFailure>,
     pub(crate) error: Option<String>,
 }
 

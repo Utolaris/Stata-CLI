@@ -14,4 +14,5 @@
 - Use Python by default for final charts and save them into `outputs/`.
 - If the user explicitly wants Stata graphs, export them explicitly to `outputs/` with `graph export`
 - Do not install third-party commands without the user's permission. You should ask for their consent.
+- Use `stata-cli run -code` to execute a one-time command such as `ssc install`
 - Read the local `stata-cli` skill when you need Stata syntax help, package guidance, or idiomatic patterns.

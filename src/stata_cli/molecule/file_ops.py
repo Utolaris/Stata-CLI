@@ -7,6 +7,7 @@ import os
 
 from ..atom.contracts import ExecutionResult, GraphArtifact
 from ..atom.output_filter import process_output
+from ..atom.partial_failure_parser import parse_partial_failures
 from ..atom.pathing import get_log_file_path, resolve_do_file_path
 from ..atom.runtime_state import get_runtime_state
 from ..coordinator.runtime_commander import command_session_id, presented_session_id
@@ -56,6 +57,7 @@ def run_file_command(
         working_dir=working_dir,
     )
     output = (result.get("output") or "").replace("\\n", "\n")
+    partial_failures = parse_partial_failures(output)
     filtered = output if config.raw_output else process_output(
         output,
         result_display_mode=config.result_display_mode,
@@ -74,5 +76,6 @@ def run_file_command(
         session_id=presented_session_id(session_id, result.get("session_id"), config),
         log_file=result.get("log_file") or log_file,
         graphs=_graphs_from_result(result),
+        partial_failures=partial_failures,
         error=error,
     )

@@ -14,6 +14,15 @@ class GraphArtifact(BaseModel):
     format: str | None = Field(None, description="Export format, when known")
 
 
+class PartialFailure(BaseModel):
+    """Structured metadata for a non-fatal Stata command failure."""
+
+    line: int | None = Field(None, description="Approximate command echo line in the do-file log")
+    command: str | None = Field(None, description="Command associated with the Stata return code")
+    return_code: str | None = Field(None, description="Stata return code, for example r(199)")
+    message: str = Field("", description="Error message preceding the return code")
+
+
 class ExecutionResult(BaseModel):
     """Structured execution response for CLI commands."""
 
@@ -22,6 +31,10 @@ class ExecutionResult(BaseModel):
     session_id: str | None = Field(None, description="Effective session identifier")
     log_file: str | None = Field(None, description="Path to the execution log, if available")
     graphs: list[GraphArtifact] = Field(default_factory=list, description="Exported graphs")
+    partial_failures: list[PartialFailure] = Field(
+        default_factory=list,
+        description="Recoverable Stata failures detected inside an otherwise completed run",
+    )
     error: str | None = Field(None, description="Structured error message")
 
 
