@@ -4,8 +4,10 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import sys
+import time
 
 from ..atom.contracts import CompletionContextResult, ExecutionResult
 from ..atom.runtime_state import get_runtime_state
@@ -168,17 +170,26 @@ def mock_bridge_command(session_id: str | None, working_dir: str | None) -> int:
         code = payload.get("code", "")
         request_working_dir = payload.get("working_dir")
         effective_working_dir = request_working_dir if isinstance(request_working_dir, str) else working_dir or ""
+        sleep_ms = int(os.getenv("STATA_CLI_BRIDGE_TEST_SLEEP_MS", "0") or "0")
+        if sleep_ms > 0:
+            time.sleep(sleep_ms / 1000.0)
         output = f"mock-repl code={code} working_dir={effective_working_dir}"
         if code.strip() == "display 2+3":
             output = ". display 2+3\n5\n"
+        status = "success"
+        error = None
+        if code.strip() == "force error":
+            status = "error"
+            output = ""
+            error = "forced mock error"
         _emit(
             ExecutionResult(
-                status="success",
+                status=status,
                 output=output,
                 session_id=session_id or "default",
                 log_file=None,
                 graphs=[],
-                error=None,
+                error=error,
             )
         )
 

@@ -89,6 +89,37 @@ fn run_command_round_trips_through_python_backend() {
 }
 
 #[test]
+fn run_command_emits_long_task_heartbeat_on_stderr_without_polluting_stdout() {
+    let temp = tempdir().unwrap();
+    let output = base_command()
+        .env("STATA_CLI_BACKEND_TEST_SLEEP_MS", "260")
+        .env("STATA_CLI_PROGRESS_INTERVAL_MS", "100")
+        .arg("--session-id")
+        .arg("rust-heartbeat")
+        .arg("--working-dir")
+        .arg(temp.path())
+        .arg("run")
+        .arg("--code")
+        .arg("display 1+1")
+        .output()
+        .unwrap();
+
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let json: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(json["status"], "success");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("stata-cli: still running..."),
+        "stderr: {stderr}"
+    );
+}
+
+#[test]
 fn file_command_returns_structured_python_artifacts() {
     let temp = tempdir().unwrap();
     let do_file = temp.path().join("sample.do");

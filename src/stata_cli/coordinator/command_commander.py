@@ -8,6 +8,7 @@ import json
 import os
 import sys
 import tempfile
+import time
 from pathlib import Path
 from typing import Any
 
@@ -121,6 +122,10 @@ def is_test_mode() -> bool:
 
 
 def mock_result_from_args(args: argparse.Namespace) -> ExecutionResult | dict[str, Any]:
+    sleep_ms = int(os.getenv("STATA_CLI_BACKEND_TEST_SLEEP_MS", "0") or "0")
+    if sleep_ms > 0:
+        time.sleep(sleep_ms / 1000.0)
+
     session_id = getattr(args, "session_id", None)
     presented_session_id = default_presented_session(session_id)
     working_dir = getattr(args, "working_dir", None) or ""

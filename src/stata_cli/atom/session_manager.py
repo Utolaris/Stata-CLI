@@ -914,15 +914,34 @@ class SessionManager:
             try:
                 start_wait = time.time()
                 deadline = start_wait + timeout + 5.0
+                health_interval = float(os.getenv("STATA_CLI_WORKER_HEALTH_INTERVAL_SECONDS", "30"))
+                if health_interval <= 0:
+                    health_interval = 30.0
+                last_health_check = start_wait
                 result = None
 
                 while time.time() < deadline:
+                    now = time.time()
+                    if now - last_health_check >= health_interval:
+                        last_health_check = now
+                        if session.process and not session.process.is_alive():
+                            with self._lock:
+                                session.state = SessionState.ERROR
+                                session.current_command_id = None
+                                session.error_message = "Worker process died during execution"
+                            return {
+                                "status": "error",
+                                "error": "Worker process died during execution",
+                                "session_id": session.session_id
+                            }
+
                     remaining_timeout = deadline - time.time()
                     if remaining_timeout <= 0:
                         break
 
+                    next_health_check = max(0.01, health_interval - (time.time() - last_health_check))
                     try:
-                        candidate = result_queue.get(timeout=min(remaining_timeout, 1.0))
+                        candidate = result_queue.get(timeout=min(remaining_timeout, 1.0, next_health_check))
                         candidate_id = candidate.get('command_id', '')
 
                         # Check if this result matches our command

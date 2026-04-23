@@ -1,12 +1,16 @@
 use crate::atom::cli_contract::{Cli, DataCommands};
 use crate::atom::json_contract::ExecutionResult;
 use crate::atom::path_ops::{absolutize_cli_path, backend_entry};
-use crate::atom::process_runner::{command_output, configure_pythonpath};
+use crate::atom::process_runner::configure_pythonpath;
+use crate::atom::progress_feedback::{backend_heartbeat_message, heartbeat_interval};
 use anyhow::{bail, Context, Result};
 use serde_json::Value;
 use std::ffi::OsString;
+use std::io::Read;
 use std::path::Path;
-use std::process::{Child, Command, Stdio};
+use std::process::{Child, Command, Output, Stdio};
+use std::thread;
+use std::time::Duration;
 
 pub(crate) fn base_backend_cli_args(
     cli: &Cli,
@@ -182,7 +186,7 @@ pub(crate) fn invoke_backend_json(
     let mut command = Command::new(python);
     command.args(&args).current_dir(repo_root);
     configure_pythonpath(&mut command, repo_root);
-    let output = command_output(&mut command)
+    let output = command_output_with_heartbeat(&mut command)
         .with_context(|| format!("Failed to launch backend with {}", python.display()))?;
 
     if !output.status.success() && output.stdout.is_empty() {
@@ -196,6 +200,56 @@ pub(crate) fn invoke_backend_json(
             String::from_utf8_lossy(&output.stdout)
         )
     })
+}
+
+fn command_output_with_heartbeat(command: &mut Command) -> Result<Output> {
+    command.stdout(Stdio::piped()).stderr(Stdio::piped());
+    let mut child = command
+        .spawn()
+        .with_context(|| "Failed to launch child process".to_string())?;
+    let mut stdout = child
+        .stdout
+        .take()
+        .context("Backend stdout was not available")?;
+    let mut stderr = child
+        .stderr
+        .take()
+        .context("Backend stderr was not available")?;
+
+    let stdout_reader = thread::spawn(move || {
+        let mut buffer = Vec::new();
+        stdout.read_to_end(&mut buffer).map(|_| buffer)
+    });
+    let stderr_reader = thread::spawn(move || {
+        let mut buffer = Vec::new();
+        stderr.read_to_end(&mut buffer).map(|_| buffer)
+    });
+
+    let started = std::time::Instant::now();
+    let heartbeat = heartbeat_interval();
+    let mut next_heartbeat = heartbeat;
+    loop {
+        if let Some(status) = child.try_wait()? {
+            let stdout = stdout_reader
+                .join()
+                .map_err(|_| anyhow::anyhow!("Backend stdout reader panicked"))??;
+            let stderr = stderr_reader
+                .join()
+                .map_err(|_| anyhow::anyhow!("Backend stderr reader panicked"))??;
+            return Ok(Output {
+                status,
+                stdout,
+                stderr,
+            });
+        }
+
+        let elapsed = started.elapsed();
+        if elapsed >= next_heartbeat {
+            eprintln!("{}", backend_heartbeat_message(elapsed));
+            next_heartbeat += heartbeat;
+        }
+        thread::sleep(Duration::from_millis(100));
+    }
 }
 
 pub(crate) fn spawn_bridge_with_project_python(

@@ -15,6 +15,7 @@ Run with: uv run pytest tests/test_session_manager.py -v
 
 import multiprocessing
 import os
+import queue
 import sys
 import threading
 import time
@@ -23,7 +24,7 @@ import unittest
 # Add src to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
-from session_manager import Session, SessionManager, SessionState
+from session_manager import CommandType, Session, SessionManager, SessionState
 
 
 # Configuration for tests
@@ -425,6 +426,52 @@ class TestParallelExecution(unittest.TestCase):
 
 class TestSessionCleanup(unittest.TestCase):
     """Test session cleanup and health monitoring"""
+
+    def test_execute_command_detects_worker_death_during_wait(self):
+        """Worker death during a long command should return before command timeout."""
+        manager = SessionManager(
+            stata_path=STATA_PATH,
+            stata_edition=STATA_EDITION,
+            enabled=False,
+            command_timeout=10,
+        )
+
+        class DiesAfterFirstCheck:
+            def __init__(self):
+                self.calls = 0
+
+            def is_alive(self):
+                self.calls += 1
+                return self.calls == 1
+
+        session = Session(
+            session_id="death-test",
+            process=DiesAfterFirstCheck(),
+            command_queue=queue.Queue(),
+            result_queue=queue.Queue(),
+            state=SessionState.READY,
+        )
+
+        previous_interval = os.environ.get("STATA_CLI_WORKER_HEALTH_INTERVAL_SECONDS")
+        os.environ["STATA_CLI_WORKER_HEALTH_INTERVAL_SECONDS"] = "0.01"
+        try:
+            started = time.time()
+            result = manager._execute_command(  # noqa: SLF001 - targeted health-loop regression test
+                session,
+                CommandType.EXECUTE,
+                {"code": "sleep 10000", "timeout": 10},
+                timeout=10,
+            )
+        finally:
+            if previous_interval is None:
+                os.environ.pop("STATA_CLI_WORKER_HEALTH_INTERVAL_SECONDS", None)
+            else:
+                os.environ["STATA_CLI_WORKER_HEALTH_INTERVAL_SECONDS"] = previous_interval
+
+        assert time.time() - started < 1.0
+        assert result["status"] == "error"
+        assert result["error"] == "Worker process died during execution"
+        assert session.state == SessionState.ERROR
 
     @skip_if_no_stata
     def test_list_sessions(self):

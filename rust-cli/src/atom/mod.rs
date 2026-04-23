@@ -9,5 +9,6 @@ pub(crate) mod json_contract;
 pub(crate) mod output_filtering;
 pub(crate) mod path_ops;
 pub(crate) mod process_runner;
+pub(crate) mod progress_feedback;
 pub(crate) mod repl_formatting;
 pub(crate) mod smcl_html;

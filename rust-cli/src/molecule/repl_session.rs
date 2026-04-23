@@ -3,6 +3,10 @@ use crate::atom::completion_cache::CompletionCache;
 use crate::atom::json_contract::{BridgeRequest, CompletionContextResult, ExecutionResult};
 use crate::atom::path_ops::repl_history_path;
 use crate::atom::process_runner::backend_command_available;
+use crate::atom::progress_feedback::{
+    backend_heartbeat_message, clear_terminal_line, heartbeat_interval, prompt_status_line,
+    spinner_interval, spinner_message,
+};
 use crate::atom::repl_formatting::{
     format_repl_output, highlight_input_line, sanitize_repl_output,
 };
@@ -26,6 +30,7 @@ use std::collections::HashSet;
 use std::io::{self, BufRead, BufReader, IsTerminal, Write};
 use std::process::{Child, ChildStdin, ChildStdout};
 use std::sync::{Arc, Mutex};
+use std::thread;
 
 struct ReplHelper {
     colorize: bool,
@@ -233,6 +238,7 @@ impl BridgeClient {
         code: &str,
         working_dir: Option<&str>,
         timeout: Option<u32>,
+        show_progress: bool,
     ) -> Result<ExecutionResult> {
         let request = BridgeRequest {
             command: "run".to_string(),
@@ -243,7 +249,11 @@ impl BridgeClient {
             context_kind: None,
         };
         self.send_request(&request)?;
-        self.read_execution_response()
+        if show_progress {
+            self.read_execution_response_with_spinner()
+        } else {
+            self.read_execution_response()
+        }
     }
 
     fn completion_snapshot(&mut self) -> Result<CompletionContextResult> {
@@ -290,9 +300,54 @@ impl BridgeClient {
     }
 
     fn read_execution_response(&mut self) -> Result<ExecutionResult> {
-        let line = self.read_response_line()?;
-        serde_json::from_str(line.trim_end())
-            .context("Backend bridge returned invalid execution JSON")
+        read_execution_response_from(&mut self.stdout)
+    }
+
+    fn read_execution_response_with_spinner(&mut self) -> Result<ExecutionResult> {
+        let child = &mut self.child;
+        let stdout = &mut self.stdout;
+        thread::scope(|scope| {
+            let response_reader = scope.spawn(move || read_execution_response_from(stdout));
+            let started = std::time::Instant::now();
+            let heartbeat = heartbeat_interval();
+            let mut next_heartbeat = heartbeat;
+            let mut frame_index = 0usize;
+
+            while !response_reader.is_finished() {
+                if let Some(status) = child.try_wait()? {
+                    print!("{}", clear_terminal_line());
+                    io::stdout().flush()?;
+                    bail!("Backend bridge exited before returning a response: {status}");
+                }
+
+                let elapsed = started.elapsed();
+                print!(
+                    "{}{}",
+                    clear_terminal_line(),
+                    spinner_message(elapsed, frame_index, true)
+                );
+                io::stdout().flush()?;
+                frame_index = frame_index.wrapping_add(1);
+
+                if elapsed >= next_heartbeat {
+                    print!(
+                        "{}{}",
+                        clear_terminal_line(),
+                        backend_heartbeat_message(elapsed)
+                    );
+                    io::stdout().flush()?;
+                    next_heartbeat += heartbeat;
+                }
+
+                thread::sleep(spinner_interval());
+            }
+
+            print!("{}", clear_terminal_line());
+            io::stdout().flush()?;
+            response_reader
+                .join()
+                .map_err(|_| anyhow::anyhow!("Backend bridge response reader panicked"))?
+        })
     }
 
     fn read_completion_response(&mut self) -> Result<CompletionContextResult> {
@@ -300,6 +355,15 @@ impl BridgeClient {
         serde_json::from_str(line.trim_end())
             .context("Backend bridge returned invalid completion JSON")
     }
+}
+
+fn read_execution_response_from(stdout: &mut BufReader<ChildStdout>) -> Result<ExecutionResult> {
+    let mut line = String::new();
+    let bytes = stdout.read_line(&mut line)?;
+    if bytes == 0 {
+        bail!("Backend bridge exited before returning a response");
+    }
+    serde_json::from_str(line.trim_end()).context("Backend bridge returned invalid execution JSON")
 }
 
 fn clear_screen() -> io::Result<()> {
@@ -323,6 +387,22 @@ fn print_result(result: &ExecutionResult, colorize: bool) {
             println!();
         }
     }
+}
+
+fn mark_submitted_prompts(lines: &[String], success: bool, colorize: bool) -> io::Result<()> {
+    if !colorize || lines.is_empty() {
+        return Ok(());
+    }
+
+    for (index, line) in lines.iter().enumerate() {
+        let distance_from_bottom = lines.len() - index;
+        let prefix = if index == 0 { "." } else { ">" };
+        print!(
+            "\x1b[{distance_from_bottom}A\r\x1b[2K{}\x1b[{distance_from_bottom}B\r",
+            prompt_status_line(prefix, line, success, colorize)
+        );
+    }
+    io::stdout().flush()
 }
 
 fn build_editor(
@@ -417,11 +497,20 @@ pub(crate) fn repl_command(cli: &Cli) -> Result<()> {
                     .working_dir
                     .as_ref()
                     .map(|item| item.to_string_lossy().to_string());
-                let result = bridge.lock().expect("bridge mutex poisoned").execute(
+                let result = match bridge.lock().expect("bridge mutex poisoned").execute(
                     &code,
                     request_working_dir.as_deref(),
                     cli.timeout,
-                )?;
+                    colorize,
+                ) {
+                    Ok(result) => result,
+                    Err(error) => {
+                        mark_submitted_prompts(&buffer, false, colorize)?;
+                        eprintln!("stata-cli repl: {error}");
+                        return Err(error);
+                    }
+                };
+                mark_submitted_prompts(&buffer, result.status == "success", colorize)?;
                 print_result(&result, colorize);
                 if let Some(helper) = editor.helper_mut() {
                     helper.invalidate_completion_cache();

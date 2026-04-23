@@ -1,6 +1,6 @@
 use anyhow::{bail, Context, Result};
 use std::path::Path;
-use std::process::{Command, Output, Stdio};
+use std::process::{Command, Stdio};
 
 pub(crate) fn inspect_python_version(python: &Path) -> Result<String> {
     let output = Command::new(python)
@@ -16,12 +16,6 @@ pub(crate) fn inspect_python_version(python: &Path) -> Result<String> {
     }
 
     Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
-}
-
-pub(crate) fn command_output(command: &mut Command) -> Result<Output> {
-    command
-        .output()
-        .with_context(|| "Failed to launch child process".to_string())
 }
 
 pub(crate) fn configure_pythonpath(command: &mut Command, repo_root: &Path) {
