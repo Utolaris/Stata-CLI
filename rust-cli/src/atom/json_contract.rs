@@ -22,6 +22,16 @@ pub(crate) struct BridgeRequest {
     pub(crate) code: Option<String>,
     pub(crate) working_dir: Option<String>,
     pub(crate) timeout: Option<u32>,
+    pub(crate) prefix: Option<String>,
+    pub(crate) context_kind: Option<String>,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub(crate) struct CompletionContextResult {
+    pub(crate) status: String,
+    pub(crate) variables: Vec<String>,
+    pub(crate) macros: Vec<String>,
+    pub(crate) error: Option<String>,
 }
 
 #[derive(Debug, Clone)]

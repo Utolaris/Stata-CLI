@@ -51,8 +51,15 @@ macOS / Linux:
 Windows PowerShell:
 
 ```powershell
-cargo build --release --manifest-path rust-cli/Cargo.toml
-Copy-Item rust-cli\\target\\release\\stata-cli.exe bin\\stata-cli.exe
+cargo install cargo-zigbuild --locked
+cargo zigbuild --release --target x86_64-pc-windows-gnu --manifest-path rust-cli/Cargo.toml
+Copy-Item rust-cli\\target\\x86_64-pc-windows-gnu\\release\\stata-cli.exe bin\\stata-cli.exe
+```
+
+If you have Bash available on Windows, you can also run:
+
+```bash
+bash ./scripts/build_windows_bin.sh
 ```
 
 ### 4. Locate the bundled skill

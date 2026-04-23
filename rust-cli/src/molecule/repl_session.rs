@@ -1,5 +1,6 @@
 use crate::atom::cli_contract::Cli;
-use crate::atom::json_contract::{BridgeRequest, ExecutionResult};
+use crate::atom::completion_cache::CompletionCache;
+use crate::atom::json_contract::{BridgeRequest, CompletionContextResult, ExecutionResult};
 use crate::atom::path_ops::repl_history_path;
 use crate::atom::process_runner::backend_command_available;
 use crate::atom::repl_formatting::{
@@ -7,6 +8,9 @@ use crate::atom::repl_formatting::{
 };
 use crate::molecule::backend_client::{
     spawn_bridge_via_backend_command, spawn_bridge_via_module, spawn_bridge_with_project_python,
+};
+use crate::molecule::repl_completion::{
+    completion_hint, completion_pairs, update_cache_from_snapshot,
 };
 use crate::molecule::repo_resolution::{resolve_python, resolve_repo_root, PROJECT_ROOT_ENV};
 use anyhow::{bail, Context, Result};
@@ -18,11 +22,74 @@ use rustyline::history::DefaultHistory;
 use rustyline::validate::Validator;
 use rustyline::{CompletionType, Config, Context as RustyContext, Editor, Helper};
 use std::borrow::Cow;
+use std::collections::HashSet;
 use std::io::{self, BufRead, BufReader, IsTerminal, Write};
 use std::process::{Child, ChildStdin, ChildStdout};
+use std::sync::{Arc, Mutex};
 
 struct ReplHelper {
     colorize: bool,
+    bridge: Arc<Mutex<BridgeClient>>,
+    buffer_words: HashSet<String>,
+    completion_cache: Mutex<CompletionCache>,
+}
+
+impl ReplHelper {
+    fn remember_line(&mut self, line: &str) {
+        let mut current = String::new();
+        for ch in line.chars() {
+            if ch.is_ascii_alphanumeric() || ch == '_' || ch == '.' {
+                current.push(ch);
+                continue;
+            }
+            self.push_word(&mut current);
+        }
+        self.push_word(&mut current);
+    }
+
+    fn push_word(&mut self, current: &mut String) {
+        let should_keep = current.len() >= 2
+            && current
+                .chars()
+                .next()
+                .map(|ch| ch.is_ascii_alphabetic() || ch == '_')
+                .unwrap_or(false);
+        if should_keep {
+            self.buffer_words.insert(current.to_ascii_lowercase());
+        }
+        current.clear();
+    }
+
+    fn invalidate_completion_cache(&mut self) {
+        self.completion_cache
+            .lock()
+            .expect("completion cache mutex poisoned")
+            .invalidate();
+    }
+
+    fn refresh_completion_cache(&mut self) {
+        let snapshot = self
+            .bridge
+            .lock()
+            .expect("bridge mutex poisoned")
+            .completion_snapshot();
+        match snapshot {
+            Ok(snapshot) if snapshot.status == "success" => {
+                update_cache_from_snapshot(
+                    &mut self
+                        .completion_cache
+                        .lock()
+                        .expect("completion cache mutex poisoned"),
+                    &snapshot,
+                );
+            }
+            _ => self
+                .completion_cache
+                .lock()
+                .expect("completion cache mutex poisoned")
+                .invalidate(),
+        }
+    }
 }
 
 impl Helper for ReplHelper {}
@@ -32,19 +99,58 @@ impl Completer for ReplHelper {
 
     fn complete(
         &self,
-        _line: &str,
+        line: &str,
         pos: usize,
         _ctx: &RustyContext<'_>,
     ) -> rustyline::Result<(usize, Vec<Pair>)> {
-        Ok((pos, Vec::new()))
+        let mut completion_cache = self
+            .completion_cache
+            .lock()
+            .expect("completion cache mutex poisoned");
+        if !completion_cache.is_valid() {
+            if let Ok(snapshot) = self
+                .bridge
+                .lock()
+                .expect("bridge mutex poisoned")
+                .completion_snapshot()
+            {
+                if snapshot.status == "success" {
+                    update_cache_from_snapshot(&mut completion_cache, &snapshot);
+                }
+            }
+        }
+
+        Ok(completion_pairs(
+            line,
+            pos,
+            &self.buffer_words,
+            &completion_cache,
+        ))
     }
 }
 
 impl Hinter for ReplHelper {
     type Hint = String;
 
-    fn hint(&self, _line: &str, _pos: usize, _ctx: &RustyContext<'_>) -> Option<String> {
-        None
+    fn hint(&self, line: &str, pos: usize, _ctx: &RustyContext<'_>) -> Option<String> {
+        let mut completion_cache = self
+            .completion_cache
+            .lock()
+            .expect("completion cache mutex poisoned");
+        if !completion_cache.is_valid() {
+            if let Ok(snapshot) = self
+                .bridge
+                .lock()
+                .expect("bridge mutex poisoned")
+                .completion_snapshot()
+            {
+                if snapshot.status == "success" {
+                    update_cache_from_snapshot(&mut completion_cache, &snapshot);
+                }
+            }
+        }
+
+        completion_hint(line, pos, &self.buffer_words, &completion_cache)
     }
 }
 
@@ -78,7 +184,11 @@ impl Highlighter for ReplHelper {
     }
 
     fn highlight_hint<'h>(&self, hint: &'h str) -> Cow<'h, str> {
-        Cow::Borrowed(hint)
+        if self.colorize {
+            Cow::Owned(format!("\x1b[90m{hint}\x1b[0m"))
+        } else {
+            Cow::Borrowed(hint)
+        }
     }
 
     fn highlight_candidate<'c>(
@@ -129,9 +239,24 @@ impl BridgeClient {
             code: Some(code.to_string()),
             working_dir: working_dir.map(ToOwned::to_owned),
             timeout,
+            prefix: None,
+            context_kind: None,
         };
         self.send_request(&request)?;
-        self.read_response()
+        self.read_execution_response()
+    }
+
+    fn completion_snapshot(&mut self) -> Result<CompletionContextResult> {
+        let request = BridgeRequest {
+            command: "complete_context".to_string(),
+            code: None,
+            working_dir: None,
+            timeout: None,
+            prefix: None,
+            context_kind: None,
+        };
+        self.send_request(&request)?;
+        self.read_completion_response()
     }
 
     fn shutdown(&mut self) -> Result<()> {
@@ -140,6 +265,8 @@ impl BridgeClient {
             code: None,
             working_dir: None,
             timeout: None,
+            prefix: None,
+            context_kind: None,
         };
         let _ = self.send_request(&request);
         let _ = self.child.wait();
@@ -153,13 +280,25 @@ impl BridgeClient {
         Ok(())
     }
 
-    fn read_response(&mut self) -> Result<ExecutionResult> {
+    fn read_response_line(&mut self) -> Result<String> {
         let mut line = String::new();
         let bytes = self.stdout.read_line(&mut line)?;
         if bytes == 0 {
             bail!("Backend bridge exited before returning a response");
         }
-        serde_json::from_str(line.trim_end()).context("Backend bridge returned invalid JSON")
+        Ok(line)
+    }
+
+    fn read_execution_response(&mut self) -> Result<ExecutionResult> {
+        let line = self.read_response_line()?;
+        serde_json::from_str(line.trim_end())
+            .context("Backend bridge returned invalid execution JSON")
+    }
+
+    fn read_completion_response(&mut self) -> Result<CompletionContextResult> {
+        let line = self.read_response_line()?;
+        serde_json::from_str(line.trim_end())
+            .context("Backend bridge returned invalid completion JSON")
     }
 }
 
@@ -186,13 +325,21 @@ fn print_result(result: &ExecutionResult, colorize: bool) {
     }
 }
 
-fn build_editor(colorize: bool) -> Result<Editor<ReplHelper, DefaultHistory>> {
+fn build_editor(
+    colorize: bool,
+    bridge: Arc<Mutex<BridgeClient>>,
+) -> Result<Editor<ReplHelper, DefaultHistory>> {
     let config = Config::builder()
         .completion_type(CompletionType::List)
         .auto_add_history(false)
         .build();
     let mut editor = Editor::<ReplHelper, DefaultHistory>::with_config(config)?;
-    editor.set_helper(Some(ReplHelper { colorize }));
+    editor.set_helper(Some(ReplHelper {
+        colorize,
+        bridge,
+        buffer_words: HashSet::new(),
+        completion_cache: Mutex::new(CompletionCache::default()),
+    }));
 
     if let Some(history_path) = repl_history_path() {
         if let Some(parent) = history_path.parent() {
@@ -232,8 +379,11 @@ fn start_bridge(cli: &Cli) -> Result<BridgeClient> {
 
 pub(crate) fn repl_command(cli: &Cli) -> Result<()> {
     let colorize = io::stdout().is_terminal();
-    let mut bridge = start_bridge(cli)?;
-    let mut editor = build_editor(colorize)?;
+    let bridge = Arc::new(Mutex::new(start_bridge(cli)?));
+    let mut editor = build_editor(colorize, Arc::clone(&bridge))?;
+    if let Some(helper) = editor.helper_mut() {
+        helper.refresh_completion_cache();
+    }
     clear_screen()?;
 
     let mut prompt = ". ";
@@ -251,6 +401,9 @@ pub(crate) fn repl_command(cli: &Cli) -> Result<()> {
                 }
                 if !line.trim().is_empty() {
                     let _ = editor.add_history_entry(line.as_str());
+                    if let Some(helper) = editor.helper_mut() {
+                        helper.remember_line(line.as_str());
+                    }
                 }
                 buffer.push(line);
 
@@ -264,8 +417,16 @@ pub(crate) fn repl_command(cli: &Cli) -> Result<()> {
                     .working_dir
                     .as_ref()
                     .map(|item| item.to_string_lossy().to_string());
-                let result = bridge.execute(&code, request_working_dir.as_deref(), cli.timeout)?;
+                let result = bridge.lock().expect("bridge mutex poisoned").execute(
+                    &code,
+                    request_working_dir.as_deref(),
+                    cli.timeout,
+                )?;
                 print_result(&result, colorize);
+                if let Some(helper) = editor.helper_mut() {
+                    helper.invalidate_completion_cache();
+                    helper.refresh_completion_cache();
+                }
                 buffer.clear();
                 prompt = ". ";
             }
@@ -280,7 +441,7 @@ pub(crate) fn repl_command(cli: &Cli) -> Result<()> {
                 break;
             }
             Err(error) => {
-                let _ = bridge.shutdown();
+                let _ = bridge.lock().expect("bridge mutex poisoned").shutdown();
                 save_history(&mut editor);
                 return Err(error).context("Rust REPL failed");
             }
@@ -288,6 +449,6 @@ pub(crate) fn repl_command(cli: &Cli) -> Result<()> {
     }
 
     save_history(&mut editor);
-    bridge.shutdown()?;
+    bridge.lock().expect("bridge mutex poisoned").shutdown()?;
     Ok(())
 }

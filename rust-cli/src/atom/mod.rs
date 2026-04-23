@@ -1,5 +1,9 @@
 pub(crate) mod boilerplate_copy;
 pub(crate) mod cli_contract;
+pub(crate) mod completion_cache;
+pub(crate) mod completion_catalog;
+pub(crate) mod completion_context;
+pub(crate) mod completion_render;
 pub(crate) mod config_store;
 pub(crate) mod json_contract;
 pub(crate) mod output_filtering;

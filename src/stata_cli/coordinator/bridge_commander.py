@@ -4,9 +4,12 @@
 from __future__ import annotations
 
 import json
+import re
 import sys
 
-from ..atom.contracts import ExecutionResult
+from ..atom.contracts import CompletionContextResult, ExecutionResult
+from ..atom.runtime_state import get_runtime_state
+from ..atom.session_manager import SessionState
 from ..molecule.selection_ops import render_error, run_selection_command
 
 
@@ -14,6 +17,82 @@ def _emit(result: ExecutionResult) -> None:
     sys.stdout.write(result.model_dump_json())
     sys.stdout.write("\n")
     sys.stdout.flush()
+
+
+def _emit_completion(result: CompletionContextResult) -> None:
+    sys.stdout.write(result.model_dump_json())
+    sys.stdout.write("\n")
+    sys.stdout.flush()
+
+
+def _wait_for_bridge_session(session_id: str | None) -> bool:
+    state = get_runtime_state()
+    manager = state.active_session_manager()
+    session = manager.get_session(session_id)
+    if session is None:
+        return False
+    if session.state == SessionState.READY:
+        return True
+    if session.state != SessionState.CREATING:
+        return False
+    return manager.wait_for_ready(session, timeout=1.0)
+
+
+def _list_variables(session_id: str | None) -> list[str]:
+    try:
+        state = get_runtime_state()
+        manager = state.active_session_manager()
+        if not _wait_for_bridge_session(session_id):
+            return []
+        result = manager.get_data(session_id=session_id, max_rows=1, timeout=5.0)
+    except Exception:
+        return []
+    if result.get("status") != "success":
+        return []
+    columns = result.get("columns") or []
+    return [column for column in columns if isinstance(column, str) and column]
+
+
+_MACRO_NAME_PATTERN = re.compile(r"^\s*([A-Za-z_][A-Za-z0-9_]*)\s*:")
+_MACRO_SECTION_PATTERN = re.compile(r"^\s*(global|local)\s+macros", re.IGNORECASE)
+
+
+def _parse_macro_names(output: str) -> list[str]:
+    names: list[str] = []
+    for raw_line in output.replace("\r\n", "\n").replace("\r", "\n").split("\n"):
+        line = raw_line.strip()
+        if not line or line.startswith(". ") or line.startswith("> "):
+            continue
+        if _MACRO_SECTION_PATTERN.match(line):
+            continue
+        match = _MACRO_NAME_PATTERN.match(raw_line)
+        if match:
+            names.append(match.group(1))
+    return sorted(set(names))
+
+
+def _list_macros(session_id: str | None) -> list[str]:
+    try:
+        state = get_runtime_state()
+        manager = state.active_session_manager()
+        if not _wait_for_bridge_session(session_id):
+            return []
+        result = manager.execute("macro dir", session_id=session_id, timeout=5.0)
+    except Exception:
+        return []
+    if result.get("status") != "success":
+        return []
+    output = (result.get("output") or "").replace("\\n", "\n")
+    return _parse_macro_names(output)
+
+
+def _completion_snapshot(session_id: str | None) -> CompletionContextResult:
+    return CompletionContextResult(
+        status="success",
+        variables=_list_variables(session_id),
+        macros=_list_macros(session_id),
+        error=None,
+    )
 
 
 def bridge_command(session_id: str | None, working_dir: str | None) -> int:
@@ -31,6 +110,9 @@ def bridge_command(session_id: str | None, working_dir: str | None) -> int:
         command = payload.get("command")
         if command == "quit":
             return 0
+        if command == "complete_context":
+            _emit_completion(_completion_snapshot(session_id))
+            continue
         if command != "run":
             _emit(render_error(f"Unsupported bridge command: {command}", session_id=session_id))
             continue
@@ -69,6 +151,16 @@ def mock_bridge_command(session_id: str | None, working_dir: str | None) -> int:
         command = payload.get("command")
         if command == "quit":
             return 0
+        if command == "complete_context":
+            _emit_completion(
+                CompletionContextResult(
+                    status="success",
+                    variables=["iq", "income", "kww"],
+                    macros=["sample_macro", "stata_path"],
+                    error=None,
+                )
+            )
+            continue
         if command != "run":
             _emit(render_error(f"Unsupported bridge command: {command}", session_id=session_id))
             continue

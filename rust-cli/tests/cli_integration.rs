@@ -219,6 +219,59 @@ fn repl_command_runs_native_loop_and_quits() {
 }
 
 #[test]
+fn bridge_command_returns_completion_snapshot_in_test_mode() {
+    let repo_root = repo_root();
+    let python = project_python(&repo_root);
+    let fake_stata = env::temp_dir().join("stata-cli-fake-stata");
+    std::fs::create_dir_all(&fake_stata).unwrap();
+
+    let mut child = Command::new(python)
+        .current_dir(&repo_root)
+        .env("STATA_CLI_BACKEND_TEST_MODE", "1")
+        .env("PYTHONPATH", repo_root.join("src"))
+        .arg("-m")
+        .arg("stata_cli.entry.backend_main")
+        .arg("--stata-path")
+        .arg(&fake_stata)
+        .arg("--raw-output")
+        .arg("bridge")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+
+    {
+        let stdin = child.stdin.as_mut().expect("bridge stdin should exist");
+        stdin
+            .write_all(b"{\"command\":\"complete_context\"}\n{\"command\":\"quit\"}\n")
+            .unwrap();
+    }
+
+    let output = child.wait_with_output().unwrap();
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let first_line = stdout.lines().next().unwrap_or_default();
+    let json: Value = serde_json::from_str(first_line).unwrap();
+    assert_eq!(json["status"], "success");
+    assert!(json["variables"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|item| item == "iq"));
+    assert!(json["macros"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|item| item == "sample_macro"));
+}
+
+#[test]
 fn data_commands_round_trip_through_python_backend() {
     let temp = tempdir().unwrap();
     let csv_path = temp.path().join("export.csv");

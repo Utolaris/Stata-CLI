@@ -403,6 +403,42 @@ def test_bridge_command_routes_requests_to_backend(monkeypatch):
     assert response["session_id"] == "bridge-session"
 
 
+def test_bridge_command_returns_completion_snapshot(monkeypatch):
+    class DummySession:
+        state = SessionState.READY
+
+    class DummyManager:
+        def get_session(self, session_id=None):
+            assert session_id == "bridge-session"
+            return DummySession()
+
+        def get_data(self, **kwargs):
+            assert kwargs["session_id"] == "bridge-session"
+            return {"status": "success", "columns": ["iq", "income"]}
+
+        def execute(self, code, session_id=None, timeout=None):
+            assert code == "macro dir"
+            assert session_id == "bridge-session"
+            return {
+                "status": "success",
+                "output": "global macros\n  sample_macro: value\n  stata_path: /Applications/Stata\n",
+            }
+
+    monkeypatch.setattr(bridge_commander, "get_runtime_state", lambda: DummyState(DummyManager()))
+    stdin = io.StringIO(json.dumps({"command": "complete_context"}) + "\n" + json.dumps({"command": "quit"}) + "\n")
+    stdout = io.StringIO()
+    monkeypatch.setattr(bridge_commander.sys, "stdin", stdin)
+    monkeypatch.setattr(bridge_commander.sys, "stdout", stdout)
+
+    exit_code = bridge_commander.bridge_command("bridge-session", "/tmp/fallback")
+
+    assert exit_code == 0
+    response = json.loads(stdout.getvalue().splitlines()[0])
+    assert response["status"] == "success"
+    assert response["variables"] == ["iq", "income"]
+    assert response["macros"] == ["sample_macro", "stata_path"]
+
+
 def test_mock_bridge_command_returns_mocked_display_output(monkeypatch):
     stdin = io.StringIO(
         json.dumps({"command": "run", "code": "display 2+3", "working_dir": "/tmp/test"})
@@ -421,3 +457,18 @@ def test_mock_bridge_command_returns_mocked_display_output(monkeypatch):
     assert response["status"] == "success"
     assert response["output"] == ". display 2+3\n5\n"
     assert response["session_id"] == "bridge-session"
+
+
+def test_mock_bridge_command_returns_mocked_completion_snapshot(monkeypatch):
+    stdin = io.StringIO(json.dumps({"command": "complete_context"}) + "\n" + json.dumps({"command": "quit"}) + "\n")
+    stdout = io.StringIO()
+    monkeypatch.setattr(bridge_commander.sys, "stdin", stdin)
+    monkeypatch.setattr(bridge_commander.sys, "stdout", stdout)
+
+    exit_code = bridge_commander.mock_bridge_command("bridge-session", "/tmp/fallback")
+
+    assert exit_code == 0
+    response = json.loads(stdout.getvalue().splitlines()[0])
+    assert response["status"] == "success"
+    assert "iq" in response["variables"]
+    assert "sample_macro" in response["macros"]

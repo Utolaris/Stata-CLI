@@ -198,3 +198,18 @@ jobs:
         if: runner.os == 'macOS'
         shell: zsh {0}
         run: cargo build --release --manifest-path rust-cli/Cargo.toml
+
+      - name: Install Zig for Windows cross-build check (macOS zsh)
+        if: runner.os == 'macOS'
+        shell: zsh {0}
+        run: brew install zig
+
+      - name: Install cargo-zigbuild (macOS zsh)
+        if: runner.os == 'macOS'
+        shell: zsh {0}
+        run: cargo install cargo-zigbuild --locked
+
+      - name: Build repo Windows binary with zigbuild (macOS zsh)
+        if: runner.os == 'macOS'
+        shell: zsh {0}
+        run: bash ./scripts/build_windows_bin.sh

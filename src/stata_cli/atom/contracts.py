@@ -25,6 +25,15 @@ class ExecutionResult(BaseModel):
     error: str | None = Field(None, description="Structured error message")
 
 
+class CompletionContextResult(BaseModel):
+    """Structured completion snapshot for the Rust REPL."""
+
+    status: str = Field(..., description="Completion query status")
+    variables: list[str] = Field(default_factory=list, description="Visible variable names")
+    macros: list[str] = Field(default_factory=list, description="Known macro names")
+    error: str | None = Field(None, description="Structured error message")
+
+
 class SessionDetailsResult(BaseModel):
     """Structured session lookup result."""
 
@@ -41,4 +50,3 @@ class SessionListResult(BaseModel):
     max_sessions: int | None = Field(None, description="Configured session limit")
     available_slots: int | None = Field(None, description="Remaining session capacity")
     error: str | None = Field(None, description="Error message, if any")
-

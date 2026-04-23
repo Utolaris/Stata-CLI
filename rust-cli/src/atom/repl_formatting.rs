@@ -434,6 +434,10 @@ pub(crate) fn sanitize_repl_output(text: &str) -> String {
             pending_separator = false;
             continue;
         }
+        if stripped.starts_with(". ") || stripped.starts_with("> ") {
+            pending_separator = false;
+            continue;
+        }
         if stripped.starts_with("> ")
             && cleaned
                 .last()
@@ -566,8 +570,17 @@ mod tests {
         assert!(!cleaned.contains("quietly set seed"));
         assert!(!cleaned.contains("capture log close"));
         assert!(!cleaned.contains("> _1776689348098.log"));
-        assert!(cleaned.contains(". display 2+3"));
         assert!(cleaned.contains("5"));
+    }
+
+    #[test]
+    fn sanitize_repl_output_removes_echoed_commands_and_continuations() {
+        let raw_output = ". clear all\n. cd /tmp/project\n/tmp/project\n> legend(off)\n";
+        let cleaned = sanitize_repl_output(raw_output);
+        assert!(!cleaned.contains(". clear all"));
+        assert!(!cleaned.contains(". cd /tmp/project"));
+        assert!(!cleaned.contains("> legend(off)"));
+        assert_eq!(cleaned.trim(), "/tmp/project");
     }
 
     #[test]
