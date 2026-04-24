@@ -1,7 +1,12 @@
 #!/usr/bin/env python3
 """Compatibility shim for the packaged Python backend entrypoint."""
 
-from stata_cli.atom.contracts import ExecutionResult, GraphArtifact, PartialFailure  # noqa: F401
+from stata_cli.atom.contracts import (  # noqa: F401
+    ExecutionArtifact,
+    ExecutionResult,
+    GraphArtifact,
+    PartialFailure,
+)
 from stata_cli.coordinator.command_commander import (  # noqa: F401
     DEFAULT_DATA_VIEW_MAX_ROWS,
     build_parser,
@@ -48,6 +53,7 @@ __all__ = [
     "data_export_csv_command",
     "data_view_command",
     "emit_json_payload",
+    "ExecutionArtifact",
     "ExecutionResult",
     "GraphArtifact",
     "PartialFailure",

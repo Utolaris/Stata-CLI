@@ -133,7 +133,7 @@ mod tests {
                     },
             } => {
                 assert_eq!(output, output_path);
-                assert_eq!(input_dta, Some(input_path));
+                assert_eq!(input_dta, input_path);
                 assert!(replace);
             }
             _ => panic!("expected data export-csv command"),
@@ -172,11 +172,25 @@ mod tests {
 
     #[test]
     fn parse_data_view_uses_agent_friendly_default() {
-        let cli = Cli::parse_from(["stata-cli", "data", "view"]);
+        let cli = Cli::parse_from([
+            "stata-cli",
+            "data",
+            "view",
+            "--input-dta",
+            "scene/grilic.dta",
+        ]);
         match cli.command {
             Commands::Data {
-                command: DataCommands::View { max_rows, .. },
-            } => assert_eq!(max_rows, 50),
+                command:
+                    DataCommands::View {
+                        max_rows,
+                        input_dta,
+                        ..
+                    },
+            } => {
+                assert_eq!(max_rows, 50);
+                assert_eq!(input_dta, PathBuf::from("scene/grilic.dta"));
+            }
             _ => panic!("expected data view command"),
         }
     }
@@ -357,8 +371,7 @@ mod tests {
         let cwd = std::env::current_dir().unwrap();
         let command = DataCommands::ExportCsv {
             output: PathBuf::from("scene/export.csv"),
-            input_dta: Some(PathBuf::from("scene/grilic.dta")),
-            session_id: Some("abc".to_string()),
+            input_dta: PathBuf::from("scene/grilic.dta"),
             working_dir: Some(PathBuf::from(".")),
             replace: true,
         };

@@ -14,6 +14,14 @@ class GraphArtifact(BaseModel):
     format: str | None = Field(None, description="Export format, when known")
 
 
+class ExecutionArtifact(BaseModel):
+    """Structured metadata for files created or modified by a do-file run."""
+
+    path: str = Field(..., description="Absolute artifact file path")
+    relative_path: str | None = Field(None, description="Path relative to the artifact scan root")
+    size_bytes: int | None = Field(None, description="File size in bytes, when available")
+
+
 class PartialFailure(BaseModel):
     """Structured metadata for a non-fatal Stata command failure."""
 
@@ -31,10 +39,16 @@ class ExecutionResult(BaseModel):
     session_id: str | None = Field(None, description="Effective session identifier")
     log_file: str | None = Field(None, description="Path to the execution log, if available")
     graphs: list[GraphArtifact] = Field(default_factory=list, description="Exported graphs")
+    artifacts: list[ExecutionArtifact] = Field(
+        default_factory=list,
+        description="Files created or modified by the do-file run, excluding the CLI log",
+    )
+    artifact_count: int = Field(default=0, description="Number of created or modified artifacts")
     partial_failures: list[PartialFailure] = Field(
         default_factory=list,
         description="Recoverable Stata failures detected inside an otherwise completed run",
     )
+    partial_failure_count: int = Field(default=0, description="Number of detected recoverable Stata failures")
     error: str | None = Field(None, description="Structured error message")
 
 

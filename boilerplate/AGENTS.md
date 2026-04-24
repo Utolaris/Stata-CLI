@@ -6,7 +6,7 @@
 - Keep derived text results, exported tables, and generated files in `outputs/`.
 - Keep Python plotting or post-processing helpers in `scripts/`.
 - Run analysis with `stata-cli file do/analysis.do`.
-- Write Stata output to `outputs/result.txt`.
+- Write Stata full output to `outputs/result.txt`.
 - Use CLI JSON only to inspect `status`, `error`, `log_file`, and `graphs`.
 - Use `data view` only for variable names and small previews. Keep `max_rows` at 50 or less.
 - Do not dump large datasets into chat context.

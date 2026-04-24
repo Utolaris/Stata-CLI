@@ -10,6 +10,10 @@ log using "outputs/result.txt", text replace
 display "Run started: $S_DATE $S_TIME"
 display "Working directory: `c(pwd)'"
 
+// Let Stata fail naturally when a required command, file, variable, or package is missing.
+// Do not use defensive patterns like `display as error "..."` to simulate failures,
+// because natural Stata errors are easier for stata-cli and AI agents to detect.
+
 // Load data here.
 // use "data/example.dta", clear
 

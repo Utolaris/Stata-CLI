@@ -36,10 +36,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--log-level", choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"])
     parser.add_argument("--result-display-mode", choices=["compact", "full"])
     parser.add_argument("--max-output-tokens", type=int)
-    parser.add_argument("--multi-session", dest="multi_session", action="store_true")
-    parser.add_argument("--no-multi-session", dest="multi_session", action="store_false")
-    parser.add_argument("--max-sessions", type=int)
-    parser.add_argument("--session-timeout", type=int)
+    parser.add_argument("--multi-session", dest="multi_session", action="store_true", help=argparse.SUPPRESS)
+    parser.add_argument("--no-multi-session", dest="multi_session", action="store_false", help=argparse.SUPPRESS)
+    parser.add_argument("--max-sessions", type=int, help=argparse.SUPPRESS)
+    parser.add_argument("--session-timeout", type=int, help=argparse.SUPPRESS)
     parser.add_argument("--json", action="store_true")
     parser.add_argument("--raw-output", action="store_true", help=argparse.SUPPRESS)
     parser.set_defaults(multi_session=None)
@@ -48,40 +48,40 @@ def build_parser() -> argparse.ArgumentParser:
 
     run_parser = subparsers.add_parser("run", help="Execute a snippet of Stata code")
     run_parser.add_argument("--code", required=True)
-    run_parser.add_argument("--session-id")
+    run_parser.add_argument("--session-id", help=argparse.SUPPRESS)
     run_parser.add_argument("--working-dir")
     run_parser.add_argument("--timeout", type=int)
 
     file_parser = subparsers.add_parser("file", help="Execute a .do file")
     file_parser.add_argument("file_path")
     file_parser.add_argument("--timeout", type=int, default=600)
-    file_parser.add_argument("--session-id")
+    file_parser.add_argument("--session-id", help=argparse.SUPPRESS)
     file_parser.add_argument("--working-dir")
 
     repl_parser = subparsers.add_parser("repl", help="Start a minimal interactive shell")
-    repl_parser.add_argument("--session-id")
+    repl_parser.add_argument("--session-id", help=argparse.SUPPRESS)
     repl_parser.add_argument("--working-dir")
 
     bridge_parser = subparsers.add_parser("bridge", help=argparse.SUPPRESS)
-    bridge_parser.add_argument("--session-id")
+    bridge_parser.add_argument("--session-id", help=argparse.SUPPRESS)
     bridge_parser.add_argument("--working-dir")
 
     init_parser = subparsers.add_parser("init", help="Create an AI-ready Stata workspace scaffold")
     init_parser.add_argument("target_dir")
 
-    data_parser = subparsers.add_parser("data", help="Inspect the current dataset or export it")
+    data_parser = subparsers.add_parser("data", help="Inspect or export an explicit .dta file")
     data_subparsers = data_parser.add_subparsers(dest="data_command", required=True)
 
-    view_parser = data_subparsers.add_parser("view", help="View current data as structured rows")
-    view_parser.add_argument("--session-id")
+    view_parser = data_subparsers.add_parser("view", help="View an explicit .dta file as structured rows")
+    view_parser.add_argument("--session-id", help=argparse.SUPPRESS)
     view_parser.add_argument("--if-condition")
     view_parser.add_argument("--max-rows", type=int, default=DEFAULT_DATA_VIEW_MAX_ROWS)
-    view_parser.add_argument("--input-dta")
+    view_parser.add_argument("--input-dta", required=True)
 
-    export_parser = data_subparsers.add_parser("export-csv", help="Export the current dataset or a .dta file to CSV")
+    export_parser = data_subparsers.add_parser("export-csv", help="Export an explicit .dta file to CSV")
     export_parser.add_argument("--output", required=True)
-    export_parser.add_argument("--input-dta")
-    export_parser.add_argument("--session-id")
+    export_parser.add_argument("--input-dta", required=True)
+    export_parser.add_argument("--session-id", help=argparse.SUPPRESS)
     export_parser.add_argument("--working-dir")
     export_parser.add_argument("--replace", action="store_true")
 
@@ -161,6 +161,7 @@ def mock_result_from_args(args: argparse.Namespace) -> ExecutionResult | dict[st
             log_file=os.path.join(temp_dir, f"{os.path.splitext(file_name)[0]}.log"),
             graphs=[],
             partial_failures=partial_failures,
+            partial_failure_count=len(partial_failures),
             error=None,
         )
 

@@ -185,11 +185,114 @@ analysis completed
     result = backend.run_file_command(do_path, 30, "abc", None)
 
     assert result.status == "success"
+    assert result.partial_failure_count == 1
     assert len(result.partial_failures) == 1
     failure = result.partial_failures[0]
     assert failure.command == "capture noisily esttab ols using st_reg.rtf, replace"
     assert failure.return_code == "r(199)"
     assert failure.message == "command esttab is unrecognized"
+
+
+def test_run_file_command_counts_multiple_partial_failures(monkeypatch):
+    temp_dir = tempfile.gettempdir()
+    log_path = str(Path(temp_dir) / "test.log")
+    do_path = str(Path(temp_dir) / "test.do")
+    raw_output = """
+. capture noisily not_a_command
+command not_a_command is unrecognized
+
+. capture noisily use "missing.dta", clear
+file missing.dta not found
+r(601);
+"""
+
+    class DummyManager:
+        def execute_file(self, *args, **kwargs):
+            return {
+                "status": "success",
+                "output": raw_output,
+                "session_id": "abc",
+                "log_file": log_path,
+                "extra": {"graphs": []},
+                "error": "",
+            }
+
+    monkeypatch.setattr(file_ops, "get_runtime_state", lambda: DummyState(DummyManager(), multi_session=True))
+    monkeypatch.setattr(file_ops, "resolve_do_file_path", lambda file_path: (file_path, []))
+    monkeypatch.setattr(file_ops, "get_log_file_path", lambda *args: log_path)
+
+    result = backend.run_file_command(do_path, 30, "abc", None)
+
+    assert result.partial_failure_count == 2
+    assert [failure.message for failure in result.partial_failures] == [
+        "command not_a_command is unrecognized",
+        "file missing.dta not found",
+    ]
+
+
+def test_run_file_command_reports_generated_artifacts(monkeypatch, tmp_path):
+    do_path = tmp_path / "analysis.do"
+    do_path.write_text("display 1\n", encoding="utf-8")
+    log_path = str(tmp_path / "analysis_cli.log")
+    existing = tmp_path / "outputs" / "old.txt"
+    existing.parent.mkdir()
+    existing.write_text("before\n", encoding="utf-8")
+
+    class DummyManager:
+        def execute_file(self, *args, **kwargs):
+            (tmp_path / "outputs" / "table.rtf").write_text("table\n", encoding="utf-8")
+            existing.write_text("after\n", encoding="utf-8")
+            Path(log_path).write_text("log\n", encoding="utf-8")
+            return {
+                "status": "success",
+                "output": "file output",
+                "session_id": "abc",
+                "log_file": log_path,
+                "extra": {"graphs": []},
+                "error": "",
+            }
+
+    monkeypatch.setattr(file_ops, "get_runtime_state", lambda: DummyState(DummyManager(), multi_session=True))
+    monkeypatch.setattr(file_ops, "resolve_do_file_path", lambda file_path: (str(do_path), []))
+    monkeypatch.setattr(file_ops, "get_log_file_path", lambda *args: log_path)
+
+    result = backend.run_file_command(str(do_path), 30, "abc", str(tmp_path))
+
+    assert result.artifact_count == 2
+    artifact_paths = {Path(artifact.path).name for artifact in result.artifacts}
+    assert artifact_paths == {"table.rtf", "old.txt"}
+    assert all(Path(artifact.path).name != "analysis_cli.log" for artifact in result.artifacts)
+
+
+def test_run_file_command_reports_artifacts_when_do_file_writes_to_project_root(monkeypatch, tmp_path):
+    do_dir = tmp_path / "do"
+    do_dir.mkdir()
+    (tmp_path / "outputs").mkdir()
+    do_path = do_dir / "analysis.do"
+    do_path.write_text("cd ..\n", encoding="utf-8")
+    log_path = str(do_dir / "analysis_cli.log")
+
+    class DummyManager:
+        def execute_file(self, *args, **kwargs):
+            (tmp_path / "outputs" / "table.rtf").write_text("table\n", encoding="utf-8")
+            Path(log_path).write_text("log\n", encoding="utf-8")
+            return {
+                "status": "success",
+                "output": "file output",
+                "session_id": "abc",
+                "log_file": log_path,
+                "extra": {"graphs": []},
+                "error": "",
+            }
+
+    monkeypatch.setattr(file_ops, "get_runtime_state", lambda: DummyState(DummyManager(), multi_session=True))
+    monkeypatch.setattr(file_ops, "resolve_do_file_path", lambda file_path: (str(do_path), []))
+    monkeypatch.setattr(file_ops, "get_log_file_path", lambda *args: log_path)
+
+    result = backend.run_file_command(str(do_path), 30, "abc", None)
+
+    assert result.artifact_count == 1
+    assert result.artifacts[0].relative_path == "outputs/table.rtf"
 
 
 def test_data_view_command_multi_session(monkeypatch):
@@ -280,10 +383,11 @@ def test_data_view_command_respects_small_max_rows(monkeypatch):
 
 def test_build_parser_sets_agent_friendly_data_view_default():
     parser = backend.build_parser()
-    args = parser.parse_args(["data", "view"])
+    args = parser.parse_args(["data", "view", "--input-dta", "sample.dta"])
 
     assert args.command == "data"
     assert args.data_command == "view"
+    assert args.input_dta == "sample.dta"
     assert args.max_rows == 50
 
 

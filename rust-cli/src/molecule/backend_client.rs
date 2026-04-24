@@ -88,7 +88,6 @@ pub(crate) fn data_backend_invocation(
 ) -> Result<(&'static str, Vec<OsString>)> {
     match command {
         DataCommands::View {
-            session_id,
             if_condition,
             max_rows,
             input_dta,
@@ -98,24 +97,17 @@ pub(crate) fn data_backend_invocation(
                 OsString::from("--max-rows"),
                 OsString::from(max_rows.to_string()),
             ];
-            if let Some(session_id) = session_id {
-                args.push(OsString::from("--session-id"));
-                args.push(OsString::from(session_id));
-            }
             if let Some(if_condition) = if_condition {
                 args.push(OsString::from("--if-condition"));
                 args.push(OsString::from(if_condition));
             }
-            if let Some(input_dta) = input_dta {
-                args.push(OsString::from("--input-dta"));
-                args.push(absolutize_cli_path(input_dta)?.as_os_str().to_os_string());
-            }
+            args.push(OsString::from("--input-dta"));
+            args.push(absolutize_cli_path(input_dta)?.as_os_str().to_os_string());
             Ok(("data", args))
         }
         DataCommands::ExportCsv {
             output,
             input_dta,
-            session_id,
             working_dir,
             replace,
         } => {
@@ -124,14 +116,8 @@ pub(crate) fn data_backend_invocation(
                 OsString::from("--output"),
                 absolutize_cli_path(output)?.as_os_str().to_os_string(),
             ];
-            if let Some(input_dta) = input_dta {
-                args.push(OsString::from("--input-dta"));
-                args.push(absolutize_cli_path(input_dta)?.as_os_str().to_os_string());
-            }
-            if let Some(session_id) = session_id {
-                args.push(OsString::from("--session-id"));
-                args.push(OsString::from(session_id));
-            }
+            args.push(OsString::from("--input-dta"));
+            args.push(absolutize_cli_path(input_dta)?.as_os_str().to_os_string());
             if let Some(working_dir) = working_dir {
                 args.push(OsString::from("--working-dir"));
                 args.push(absolutize_cli_path(working_dir)?.as_os_str().to_os_string());

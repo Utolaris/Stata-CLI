@@ -11,7 +11,7 @@ pub(crate) struct Cli {
     pub(crate) stata_edition: Option<String>,
     #[arg(long)]
     pub(crate) python: Option<PathBuf>,
-    #[arg(long)]
+    #[arg(long, hide = true)]
     pub(crate) session_id: Option<String>,
     #[arg(long)]
     pub(crate) working_dir: Option<PathBuf>,
@@ -27,13 +27,13 @@ pub(crate) struct Cli {
     pub(crate) result_display_mode: Option<String>,
     #[arg(long)]
     pub(crate) max_output_tokens: Option<u32>,
-    #[arg(long, conflicts_with = "no_multi_session")]
+    #[arg(long, conflicts_with = "no_multi_session", hide = true)]
     pub(crate) multi_session: bool,
-    #[arg(long, conflicts_with = "multi_session")]
+    #[arg(long, conflicts_with = "multi_session", hide = true)]
     pub(crate) no_multi_session: bool,
-    #[arg(long)]
+    #[arg(long, hide = true)]
     pub(crate) max_sessions: Option<u32>,
-    #[arg(long)]
+    #[arg(long, hide = true)]
     pub(crate) session_timeout: Option<u32>,
     #[command(subcommand)]
     pub(crate) command: Commands,
@@ -49,7 +49,7 @@ pub(crate) enum Commands {
         path: PathBuf,
         #[arg(long)]
         timeout: Option<u32>,
-        #[arg(long)]
+        #[arg(long, hide = true)]
         session_id: Option<String>,
         #[arg(long)]
         working_dir: Option<PathBuf>,
@@ -67,21 +67,17 @@ pub(crate) enum Commands {
 pub(crate) enum DataCommands {
     View {
         #[arg(long)]
-        session_id: Option<String>,
-        #[arg(long)]
         if_condition: Option<String>,
         #[arg(long, default_value_t = 50)]
         max_rows: u32,
         #[arg(long)]
-        input_dta: Option<PathBuf>,
+        input_dta: PathBuf,
     },
     ExportCsv {
         #[arg(long)]
         output: PathBuf,
         #[arg(long)]
-        input_dta: Option<PathBuf>,
-        #[arg(long)]
-        session_id: Option<String>,
+        input_dta: PathBuf,
         #[arg(long)]
         working_dir: Option<PathBuf>,
         #[arg(long)]

@@ -138,11 +138,10 @@ Use `doctor` to confirm that the repo-local Rust CLI, Python backend, and Stata 
 
 ```bash
 stata-cli data view --input-dta /absolute/path/to/data.dta --max-rows 20
-stata-cli data view --if-condition 'iq > 110' --max-rows 10
-stata-cli data view
+stata-cli data view --input-dta /absolute/path/to/data.dta --if-condition 'iq > 110' --max-rows 10
 ```
 
-Use `data view` for small previews and schema checks. It defaults to limited output so agents do not waste context on large tables.
+Use `data view` for small previews and schema checks from an explicit `.dta` file. Non-REPL CLI commands do not share session state, so AI agents should not rely on `data view` seeing data loaded by a previous command.
 
 ## AI-first workflow
 
@@ -160,7 +159,7 @@ Then keep the working pattern simple:
 - Include `capture log close` and `set more off`
 - Write full text output to `outputs/result.txt`
 - Run the analysis with `stata-cli file do/analysis.do`
-- Use the JSON response to inspect `status`, `error`, `partial_failures`, `log_file`, and `graphs`
+- Use the JSON response to inspect `status`, `error`, `partial_failure_count`, `partial_failures`, `artifact_count`, `artifacts`, `log_file`, and `graphs`
 - Use `data view` for schema checks and small previews, not full table dumps
 - Use Python scripts under `scripts/` for final charts saved into `outputs/`
 - If the user explicitly wants Stata graphs, write explicit `graph export "outputs/..."` commands in the `.do` file instead of relying on CLI graph capture
@@ -174,7 +173,6 @@ stata-cli data export-csv --input-dta /absolute/path/to/data.dta --output /absol
 ```
 
 - Convert a `.dta` file to CSV
-- Export the current dataset to CSV
 - Overwrite an existing CSV with `--replace`
 
 ## Common failure reasons

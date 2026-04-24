@@ -179,6 +179,7 @@ fn file_command_preserves_partial_failures_from_python_backend() {
 
     let json: Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(json["status"], "success");
+    assert_eq!(json["partial_failure_count"], 1);
     let failures = json["partial_failures"].as_array().unwrap();
     assert_eq!(failures.len(), 1);
     assert_eq!(failures[0]["return_code"], "r(199)");
@@ -396,8 +397,18 @@ fn data_commands_round_trip_through_python_backend() {
 }
 
 #[test]
-fn data_view_defaults_to_50_rows() {
-    let output = base_command().arg("data").arg("view").output().unwrap();
+fn data_view_requires_explicit_input_dta_and_defaults_to_50_rows() {
+    let temp = tempdir().unwrap();
+    let dta_path = temp.path().join("sample.dta");
+    std::fs::write(&dta_path, "mock dta content\n").unwrap();
+
+    let output = base_command()
+        .arg("data")
+        .arg("view")
+        .arg("--input-dta")
+        .arg(&dta_path)
+        .output()
+        .unwrap();
 
     assert!(
         output.status.success(),
@@ -408,4 +419,5 @@ fn data_view_defaults_to_50_rows() {
     let json: Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(json["status"], "success");
     assert_eq!(json["max_rows"], 50);
+    assert_eq!(json["source_dta"], dta_path.to_string_lossy().as_ref());
 }
