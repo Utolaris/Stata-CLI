@@ -82,7 +82,7 @@ def _relative_to_nearest_root(path: str, roots: list[str]) -> str | None:
             continue
         if relative == os.pardir or relative.startswith(f"{os.pardir}{os.sep}"):
             continue
-        candidates.append((len(relative), relative))
+        candidates.append((len(relative), relative.replace(os.sep, "/")))
     if not candidates:
         return None
     return sorted(candidates)[0][1]

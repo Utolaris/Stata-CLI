@@ -102,7 +102,8 @@ jobs:
           uv run python -m stata_cli_backend
           --json
           --stata-path C:\stub\stata
-          repl
+          run
+          --code "display 1+1"
 
       - name: Run backend CLI smoke test (macOS zsh)
         if: runner.os == 'macOS'
@@ -113,7 +114,8 @@ jobs:
           uv run python -m stata_cli_backend
           --json
           --stata-path /Applications/Stata
-          repl
+          run
+          --code "display 1+1"
 
   rust-checks:
     name: Rust / ${{ matrix.os }}
