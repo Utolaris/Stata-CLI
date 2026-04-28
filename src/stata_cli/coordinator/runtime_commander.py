@@ -77,23 +77,3 @@ def shutdown_runtime() -> None:
         state.session_manager.stop()
     state.session_manager = None
     state.config = None
-
-
-def command_session_id(session_id: str | None, config: RuntimeConfig | None = None) -> str | None:
-    """Map command-level session IDs to runtime session IDs."""
-    active_config = config or get_runtime_state().active_config()
-    if active_config.multi_session:
-        return session_id
-    return None
-
-
-def presented_session_id(
-    session_id: str | None,
-    result_session_id: str | None,
-    config: RuntimeConfig | None = None,
-) -> str | None:
-    """Return the session identifier that should be shown in command output."""
-    active_config = config or get_runtime_state().active_config()
-    if active_config.multi_session:
-        return result_session_id or session_id
-    return session_id or SessionManager.DEFAULT_SESSION_ID

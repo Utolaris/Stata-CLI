@@ -4,8 +4,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-
-from .session_manager import SessionManager
+from typing import Any
 
 
 @dataclass(slots=True)
@@ -24,14 +23,14 @@ class RuntimeConfig:
 @dataclass(slots=True)
 class RuntimeState:
     config: RuntimeConfig | None = None
-    session_manager: SessionManager | None = None
+    session_manager: Any | None = None
 
     def active_config(self) -> RuntimeConfig:
         if self.config is None:
             raise RuntimeError("Runtime has not been initialized")
         return self.config
 
-    def active_session_manager(self) -> SessionManager:
+    def active_session_manager(self) -> Any:
         if self.session_manager is None:
             raise RuntimeError("Runtime session manager is not available")
         return self.session_manager

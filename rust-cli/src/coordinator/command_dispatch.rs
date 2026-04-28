@@ -1,6 +1,7 @@
 use crate::atom::cli_contract::{Cli, Commands};
 use crate::atom::json_contract::{DoctorCheck, ResolvedStataPath};
 use crate::atom::path_ops::{absolutize_cli_path, backend_entry, default_config_path};
+use crate::coordinator::repl_commander::repl_command;
 use crate::molecule::backend_client::{
     data_backend_invocation, invoke_backend, invoke_backend_json,
 };
@@ -8,7 +9,6 @@ use crate::molecule::doctor_report::{
     backend_entry_check, backend_probe_ok_check, config_file_check, error_check, finalize_report,
     python_ok_check, repo_root_check, stata_path_check,
 };
-use crate::molecule::repl_session::repl_command;
 use crate::molecule::repo_resolution::{resolve_python, resolve_repo_root};
 use crate::molecule::result_render::{
     prepare_execution_result, prepare_json_payload, render_execution_result, render_json_payload,

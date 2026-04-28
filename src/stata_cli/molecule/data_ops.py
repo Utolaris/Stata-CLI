@@ -4,12 +4,12 @@
 from __future__ import annotations
 
 import os
-from typing import Any
+from typing import Any, cast
 
 from ..atom.output_filter import process_output
 from ..atom.pathing import build_selection_for_working_dir
 from ..atom.runtime_state import get_runtime_state
-from ..coordinator.runtime_commander import command_session_id
+from ..atom.session_identity import command_session_id
 
 
 def _session_error(message: str) -> dict[str, Any]:
@@ -49,7 +49,7 @@ def data_view_command(
         return _session_error(result.get("error", "Failed to get data"))
     result["status"] = "success"
     result["source_dta"] = os.path.abspath(os.path.expanduser(input_dta)) if input_dta else None
-    return result
+    return cast(dict[str, Any], result)
 
 
 def data_export_csv_command(

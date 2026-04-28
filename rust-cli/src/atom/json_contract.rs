@@ -93,6 +93,13 @@ pub(crate) enum StataPathSource {
     Prompt,
 }
 
+pub(crate) fn format_stata_path_source(source: Option<StataPathSource>) -> String {
+    match source {
+        Some(value) => format!("{value:?}"),
+        None => "Unknown".to_string(),
+    }
+}
+
 #[derive(Debug, Clone)]
 pub(crate) struct ResolvedStataPath {
     pub(crate) path: Option<PathBuf>,

@@ -7,12 +7,30 @@ import logging
 import os
 import platform
 
-from .session_manager import join_stata_line_continuations
+
+def _join_stata_line_continuations(code: str) -> str:
+    raw_lines = code.splitlines()
+    joined_lines = []
+    current_line = ""
+
+    for raw_line in raw_lines:
+        stripped = raw_line.rstrip()
+        if stripped.endswith("///"):
+            current_line += stripped[:-3].rstrip() + " "
+        else:
+            current_line += raw_line
+            joined_lines.append(current_line)
+            current_line = ""
+
+    if current_line:
+        joined_lines.append(current_line)
+
+    return "\n".join(joined_lines)
 
 
 def build_selection_for_working_dir(selection: str, working_dir: str | None) -> str:
     """Prepend a Stata `cd` command when a valid working directory is supplied."""
-    processed = join_stata_line_continuations(selection)
+    processed = _join_stata_line_continuations(selection)
     if working_dir and os.path.isdir(working_dir):
         wd = os.path.normpath(working_dir).replace("\\", "/")
         return f'cd "{wd}"\n{processed}'
@@ -81,4 +99,3 @@ def resolve_do_file_path(file_path: str) -> tuple[str | None, list[str]]:
             return os.path.abspath(candidate), tried_paths
 
     return None, tried_paths
-

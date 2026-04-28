@@ -117,6 +117,7 @@ stata-cli file /absolute/path/to/script.do
 ```
 
 Use this for substantial Stata analysis. It is the preferred path for agent-driven work because code, logs, and generated files stay inside the project workspace.
+The JSON response keeps `output` to the final tail of the Stata log for quick error location; read `log_file` or the returned `artifacts` when the full result is needed.
 
 ### Start the REPL
 

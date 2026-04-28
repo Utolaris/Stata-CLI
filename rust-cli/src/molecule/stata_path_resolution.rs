@@ -226,13 +226,6 @@ pub(crate) fn persist_stata_path_if_needed_json(
     Ok(())
 }
 
-pub(crate) fn format_stata_path_source(source: Option<StataPathSource>) -> String {
-    match source {
-        Some(value) => format!("{value:?}"),
-        None => "Unknown".to_string(),
-    }
-}
-
 pub(crate) fn clone_with_effective_stata_path(cli: &Cli, resolved: &ResolvedStataPath) -> Cli {
     let mut effective_cli = cli.clone();
     if let Some(path) = &resolved.path {

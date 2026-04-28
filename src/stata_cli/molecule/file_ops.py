@@ -11,7 +11,7 @@ from ..atom.output_filter import process_output
 from ..atom.partial_failure_parser import parse_partial_failures
 from ..atom.pathing import get_log_file_path, resolve_do_file_path
 from ..atom.runtime_state import get_runtime_state
-from ..coordinator.runtime_commander import command_session_id, presented_session_id
+from ..atom.session_identity import command_session_id, presented_session_id
 
 
 def _graphs_from_result(result: dict) -> list[GraphArtifact]:
@@ -40,7 +40,7 @@ def run_file_command(
         return ExecutionResult(
             status="error",
             output="",
-            session_id=presented_session_id(session_id, None),
+            session_id=presented_session_id(session_id, None, config),
             log_file=None,
             graphs=[],
             error=f"File not found: {file_path}. Tried these paths: {tried_display}",

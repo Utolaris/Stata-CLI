@@ -14,7 +14,6 @@ from typing import Any
 
 from ..atom.contracts import ExecutionResult, PartialFailure
 from ..coordinator.bridge_commander import bridge_command, mock_bridge_command
-from ..coordinator.repl_commander import repl_command
 from ..coordinator.runtime_commander import (
     build_runtime_config,
     initialize_runtime,
@@ -57,10 +56,6 @@ def build_parser() -> argparse.ArgumentParser:
     file_parser.add_argument("--timeout", type=int, default=600)
     file_parser.add_argument("--session-id", help=argparse.SUPPRESS)
     file_parser.add_argument("--working-dir")
-
-    repl_parser = subparsers.add_parser("repl", help="Start a minimal interactive shell")
-    repl_parser.add_argument("--session-id", help=argparse.SUPPRESS)
-    repl_parser.add_argument("--working-dir")
 
     bridge_parser = subparsers.add_parser("bridge", help=argparse.SUPPRESS)
     bridge_parser.add_argument("--session-id", help=argparse.SUPPRESS)
@@ -201,8 +196,6 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     if is_test_mode():
-        if args.command == "repl":
-            return 0
         if args.command == "bridge":
             return mock_bridge_command(getattr(args, "session_id", None), getattr(args, "working_dir", None))
         mock_payload = mock_result_from_args(args)
@@ -221,14 +214,12 @@ def main(argv: list[str] | None = None) -> int:
             print_human_payload(init_payload)
             return payload_exit_code(init_payload)
 
-        initialize_runtime(runtime_config, lazy_default_session=args.command in {"repl", "bridge"})
+        initialize_runtime(runtime_config, lazy_default_session=args.command == "bridge")
 
         if args.command == "run":
             payload = run_selection_command(args.code, args.session_id, args.working_dir, args.timeout)
         elif args.command == "file":
             payload = run_file_command(args.file_path, args.timeout, args.session_id, args.working_dir)
-        elif args.command == "repl":
-            return repl_command(args.session_id, args.working_dir)
         elif args.command == "bridge":
             return bridge_command(args.session_id, args.working_dir)
         elif args.command == "data":

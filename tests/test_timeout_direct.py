@@ -13,7 +13,7 @@ TESTS_DIR = Path(__file__).resolve().parent
 REPO_ROOT = TESTS_DIR.parent
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
-from session_manager import SessionManager  # noqa: E402
+from stata_cli.atom.session_manager import SessionManager  # noqa: E402
 
 TEST_FILE = TESTS_DIR / "fixtures" / "test_timeout.do"
 STATA_PATH = os.environ.get("STATA_PATH", "/Applications/StataNow")

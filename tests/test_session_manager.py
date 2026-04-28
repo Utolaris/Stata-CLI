@@ -24,7 +24,7 @@ import unittest
 # Add src to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
-from session_manager import CommandType, Session, SessionManager, SessionState
+from stata_cli.atom.session_manager import CommandType, Session, SessionManager, SessionState
 
 
 # Configuration for tests

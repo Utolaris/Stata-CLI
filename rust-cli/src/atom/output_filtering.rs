@@ -3,6 +3,8 @@ use std::fs;
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+pub(crate) const FILE_OUTPUT_TAIL_LINES: usize = 80;
+
 pub(crate) fn deduplicate_break_messages(output: &str) -> String {
     if output.is_empty() || !output.contains("--Break--") {
         return output.to_string();
@@ -245,6 +247,25 @@ pub(crate) fn apply_compact_mode_filter(output: &str, filter_command_echo: bool)
     result_lines.join("\n")
 }
 
+pub(crate) fn keep_tail_lines(output: &str, max_lines: usize, log_file: Option<&str>) -> String {
+    if max_lines == 0 || output.is_empty() {
+        return output.to_string();
+    }
+
+    let normalized = output.replace("\r\n", "\n").replace('\r', "\n");
+    let lines: Vec<&str> = normalized.split('\n').collect();
+    if lines.len() <= max_lines {
+        return normalized;
+    }
+
+    let tail = lines[lines.len().saturating_sub(max_lines)..].join("\n");
+    let source = log_file
+        .filter(|path| !path.trim().is_empty())
+        .map(|path| format!(" Full output: {path}"))
+        .unwrap_or_else(|| " Full output is available in log_file when present.".to_string());
+    format!("... [output truncated to last {max_lines} lines.]{source}\n{tail}")
+}
+
 fn check_token_limit_and_save(output: &str, max_output_tokens: usize) -> String {
     if max_output_tokens == 0 {
         return output.to_string();
@@ -299,9 +320,26 @@ pub(crate) fn process_output(
     check_token_limit_and_save(&processed, max_output_tokens)
 }
 
+pub(crate) fn process_file_output(
+    output: &str,
+    result_display_mode: &str,
+    max_output_tokens: usize,
+    filter_command_echo: bool,
+    log_file: Option<&str>,
+) -> String {
+    let mut processed = deduplicate_break_messages(output);
+    if result_display_mode == "compact" {
+        processed = apply_compact_mode_filter(&processed, filter_command_echo);
+    }
+    processed = keep_tail_lines(&processed, FILE_OUTPUT_TAIL_LINES, log_file);
+    check_token_limit_and_save(&processed, max_output_tokens)
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{apply_compact_mode_filter, deduplicate_break_messages, process_output};
+    use super::{
+        apply_compact_mode_filter, deduplicate_break_messages, keep_tail_lines, process_output,
+    };
 
     #[test]
     fn compact_filter_removes_loop_and_program_echo() {
@@ -338,5 +376,22 @@ mod tests {
         let large = "x".repeat(5000);
         let rendered = process_output(&large, "full", 10, false);
         assert!(rendered.contains("Output exceeded token limit"));
+    }
+
+    #[test]
+    fn keep_tail_lines_shows_recent_output_and_log_hint() {
+        let output = (1..=5)
+            .map(|line| format!("line-{line}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        let rendered = keep_tail_lines(&output, 3, Some("/tmp/stata.log"));
+
+        assert!(rendered.contains("last 3 lines"));
+        assert!(rendered.contains("/tmp/stata.log"));
+        assert!(!rendered.contains("line-1"));
+        assert!(!rendered.contains("line-2"));
+        assert!(rendered.contains("line-3"));
+        assert!(rendered.contains("line-5"));
     }
 }

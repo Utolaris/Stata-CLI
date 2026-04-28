@@ -7,8 +7,8 @@ from ..atom.contracts import ExecutionResult
 from ..atom.output_filter import process_output
 from ..atom.pathing import build_selection_for_working_dir
 from ..atom.runtime_state import get_runtime_state
+from ..atom.session_identity import command_session_id, presented_session_id
 from ..atom.session_manager import SessionManager, SessionState
-from ..coordinator.runtime_commander import command_session_id, presented_session_id
 
 
 def _wait_for_booting_session(

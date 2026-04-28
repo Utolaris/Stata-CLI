@@ -1,7 +1,7 @@
 use crate::atom::json_contract::{
-    DoctorCheck, DoctorReport, PythonResolution, RepoRootResolution, ResolvedStataPath,
+    format_stata_path_source, DoctorCheck, DoctorReport, PythonResolution, RepoRootResolution,
+    ResolvedStataPath,
 };
-use crate::molecule::stata_path_resolution::format_stata_path_source;
 use std::path::Path;
 
 pub(crate) fn repo_root_check(repo_root: &RepoRootResolution) -> DoctorCheck {

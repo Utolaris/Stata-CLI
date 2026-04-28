@@ -32,14 +32,9 @@
 ├── scripts/                 # Helper scripts for local maintenance
 ├── skills/                  # Codex skill content
 ├── src/                     # Python backend, worker, and compatibility shims
-│   ├── api_models.py
-│   ├── output_filter.py
-│   ├── session_manager.py
-│   ├── smcl_parser.py
 │   ├── stata_cli/
 │   ├── stata_cli_backend.py
-│   ├── stata_worker.py
-│   └── utils.py
+│   └── py.typed
 └── tests/                   # Python tests, fixtures, and integration helpers
 ```
 

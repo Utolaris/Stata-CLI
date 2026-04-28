@@ -86,7 +86,7 @@ Done
 
 # =============================================================================
 # Local copy of filter function for testing
-# (This will be imported from output_filter.py after refactoring)
+# (This mirrors the packaged Rust/Python output filtering behavior.)
 # =============================================================================
 
 def apply_compact_mode_filter(output: str, filter_command_echo: bool = False) -> str:

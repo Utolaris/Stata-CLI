@@ -8,8 +8,8 @@ from __future__ import annotations
 import os
 
 from stata_cli.atom import worker_process
+from stata_cli.atom.platform_stata import default_stata_install_dir, find_stata_executable_path
 from stata_cli.coordinator import runtime_commander
-from utils import default_stata_install_dir, find_stata_executable_path
 
 
 def test_default_stata_install_dir_prefers_statanow_on_macos():

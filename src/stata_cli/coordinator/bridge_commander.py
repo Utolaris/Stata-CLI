@@ -37,7 +37,7 @@ def _wait_for_bridge_session(session_id: str | None) -> bool:
         return True
     if session.state != SessionState.CREATING:
         return False
-    return manager.wait_for_ready(session, timeout=1.0)
+    return bool(manager.wait_for_ready(session, timeout=1.0))
 
 
 def _list_variables(session_id: str | None) -> list[str]:

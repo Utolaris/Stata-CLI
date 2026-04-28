@@ -16,7 +16,7 @@ import pytest
 # Add src to path for imports
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
-from utils import default_stata_install_dir
+from stata_cli.atom.platform_stata import default_stata_install_dir
 
 
 def _default_stata_path() -> str:
@@ -122,7 +122,7 @@ def session_manager(
 
     This fixture automatically starts and stops the session manager.
     """
-    from session_manager import SessionManager
+    from stata_cli.atom.session_manager import SessionManager
 
     manager = SessionManager(**session_manager_config)
 
