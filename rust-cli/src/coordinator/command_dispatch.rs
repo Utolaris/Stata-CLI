@@ -1,6 +1,8 @@
 use crate::atom::cli_contract::{Cli, Commands};
 use crate::atom::json_contract::{DoctorCheck, ResolvedStataPath};
-use crate::atom::path_ops::{absolutize_cli_path, backend_entry, default_config_path};
+use crate::atom::path_ops::{
+    absolutize_cli_path, backend_entry, default_config_path, validate_existing_working_dir,
+};
 use crate::coordinator::repl_commander::repl_command;
 use crate::molecule::backend_client::{
     data_backend_invocation, invoke_backend, invoke_backend_json,
@@ -43,25 +45,19 @@ pub(crate) fn run() -> Result<()> {
         Commands::Doctor => doctor_command(&effective_cli, &repo_root, &resolved_stata_path),
         Commands::Run { code } => {
             let python = resolve_python(effective_cli.python.as_deref(), &repo_root.path)?;
-            let mut command_args = vec![OsString::from("--code"), OsString::from(code)];
-            if let Some(timeout) = effective_cli.timeout {
-                command_args.push(OsString::from("--timeout"));
-                command_args.push(OsString::from(timeout.to_string()));
+            let mut run_cli = effective_cli.clone();
+            if let Some(working_dir) = &effective_cli.working_dir {
+                run_cli.working_dir = Some(validate_existing_working_dir(working_dir)?);
             }
-            let result = invoke_backend(
-                &python.path,
-                &repo_root.path,
-                &effective_cli,
-                "run",
-                command_args,
-            )?;
-            let result = prepare_execution_result(&effective_cli, result, false);
+            let command_args = vec![OsString::from("--code"), OsString::from(code)];
+            let result =
+                invoke_backend(&python.path, &repo_root.path, &run_cli, "run", command_args)?;
+            let result = prepare_execution_result(&run_cli, result, false);
             persist_stata_path_if_needed(&resolved_stata_path, &result)?;
             render_execution_result(&result)
         }
         Commands::File {
             path,
-            timeout,
             session_id,
             working_dir,
         } => {
@@ -73,9 +69,6 @@ pub(crate) fn run() -> Result<()> {
             }
             if let Some(working_dir) = working_dir {
                 file_cli.working_dir = Some(absolutize_cli_path(working_dir)?);
-            }
-            if timeout.is_some() {
-                file_cli.timeout = *timeout;
             }
             let result = invoke_backend(
                 &python.path,

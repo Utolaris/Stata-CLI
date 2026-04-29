@@ -19,10 +19,10 @@ from ..coordinator.runtime_commander import (
     initialize_runtime,
     shutdown_runtime,
 )
+from ..atom.pathing import resolve_path_for_working_dir
 from ..molecule.data_ops import data_export_csv_command, data_view_command
 from ..molecule.file_ops import run_file_command
 from ..molecule.selection_ops import default_presented_session, render_error, run_selection_command
-from ..molecule.workspace_ops import init_workspace_command
 
 TEST_MODE_ENV = "STATA_CLI_BACKEND_TEST_MODE"
 DEFAULT_DATA_VIEW_MAX_ROWS = 50
@@ -49,20 +49,15 @@ def build_parser() -> argparse.ArgumentParser:
     run_parser.add_argument("--code", required=True)
     run_parser.add_argument("--session-id", help=argparse.SUPPRESS)
     run_parser.add_argument("--working-dir")
-    run_parser.add_argument("--timeout", type=int)
 
     file_parser = subparsers.add_parser("file", help="Execute a .do file")
     file_parser.add_argument("file_path")
-    file_parser.add_argument("--timeout", type=int, default=600)
     file_parser.add_argument("--session-id", help=argparse.SUPPRESS)
     file_parser.add_argument("--working-dir")
 
     bridge_parser = subparsers.add_parser("bridge", help=argparse.SUPPRESS)
     bridge_parser.add_argument("--session-id", help=argparse.SUPPRESS)
     bridge_parser.add_argument("--working-dir")
-
-    init_parser = subparsers.add_parser("init", help="Create an AI-ready Stata workspace scaffold")
-    init_parser.add_argument("target_dir")
 
     data_parser = subparsers.add_parser("data", help="Inspect or export an explicit .dta file")
     data_subparsers = data_parser.add_subparsers(dest="data_command", required=True)
@@ -126,10 +121,9 @@ def mock_result_from_args(args: argparse.Namespace) -> ExecutionResult | dict[st
     working_dir = getattr(args, "working_dir", None) or ""
 
     if args.command == "run":
-        timeout = getattr(args, "timeout", None)
         return ExecutionResult(
             status="success",
-            output=f"mock-run code={args.code} working_dir={working_dir} timeout={timeout}",
+            output=f"mock-run code={args.code} working_dir={working_dir}",
             session_id=presented_session_id,
             log_file=None,
             graphs=[],
@@ -151,7 +145,7 @@ def mock_result_from_args(args: argparse.Namespace) -> ExecutionResult | dict[st
             )
         return ExecutionResult(
             status="success",
-            output=f"mock-file file={file_name} working_dir={working_dir} timeout={args.timeout}",
+            output=f"mock-file file={file_name} working_dir={working_dir}",
             session_id=presented_session_id,
             log_file=os.path.join(temp_dir, f"{os.path.splitext(file_name)[0]}.log"),
             graphs=[],
@@ -159,9 +153,6 @@ def mock_result_from_args(args: argparse.Namespace) -> ExecutionResult | dict[st
             partial_failure_count=len(partial_failures),
             error=None,
         )
-
-    if args.command == "init":
-        return init_workspace_command(args.target_dir)
 
     if args.command == "data":
         if args.data_command == "view":
@@ -178,7 +169,7 @@ def mock_result_from_args(args: argparse.Namespace) -> ExecutionResult | dict[st
                 "source_dta": os.path.abspath(args.input_dta) if args.input_dta else None,
             }
         if args.data_command == "export-csv":
-            output_path = os.path.abspath(args.output)
+            output_path = resolve_path_for_working_dir(args.output, getattr(args, "working_dir", None))
             Path(output_path).parent.mkdir(parents=True, exist_ok=True)
             Path(output_path).write_text("x,y\n1,2\n3,4\n", encoding="utf-8")
             return {
@@ -207,19 +198,12 @@ def main(argv: list[str] | None = None) -> int:
     runtime_config = build_runtime_config(args)
     try:
         payload: object
-        if args.command == "init":
-            init_payload = init_workspace_command(args.target_dir)
-            if args.json:
-                return emit_json_payload(init_payload)
-            print_human_payload(init_payload)
-            return payload_exit_code(init_payload)
-
         initialize_runtime(runtime_config, lazy_default_session=args.command == "bridge")
 
         if args.command == "run":
-            payload = run_selection_command(args.code, args.session_id, args.working_dir, args.timeout)
+            payload = run_selection_command(args.code, args.session_id, args.working_dir)
         elif args.command == "file":
-            payload = run_file_command(args.file_path, args.timeout, args.session_id, args.working_dir)
+            payload = run_file_command(args.file_path, args.session_id, args.working_dir)
         elif args.command == "bridge":
             return bridge_command(args.session_id, args.working_dir)
         elif args.command == "data":

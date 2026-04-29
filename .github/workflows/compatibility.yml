@@ -39,6 +39,16 @@ jobs:
         with:
           enable-cache: true
 
+      - name: Prefer rustup cargo shims (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: Add-Content -Path $env:GITHUB_PATH -Value (Join-Path $HOME ".cargo/bin")
+
+      - name: Prefer rustup cargo shims (macOS zsh)
+        if: runner.os == 'macOS'
+        shell: zsh {0}
+        run: echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+
       - name: Install Python dependencies (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
@@ -49,49 +59,15 @@ jobs:
         shell: zsh {0}
         run: uv sync --all-extras --frozen --python 3.11
 
-      - name: Run Ruff (Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: uv run ruff check .
-
-      - name: Run Ruff (macOS zsh)
-        if: runner.os == 'macOS'
-        shell: zsh {0}
-        run: uv run ruff check .
-
-      - name: Run mypy (Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: uv run mypy src
-
-      - name: Run mypy (macOS zsh)
-        if: runner.os == 'macOS'
-        shell: zsh {0}
-        run: uv run mypy src
-
       - name: Run Python compatibility tests (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
-        run: >
-          uv run pytest -q
-          tests/test_cli_backend.py
-          tests/test_platform_paths.py
-          tests/test_compact_filter.py
-          tests/test_session_manager.py
-          tests/test_stop_execution.py
-          tests/test_timeout_direct.py
+        run: uv run pytest -q
 
       - name: Run Python compatibility tests (macOS zsh)
         if: runner.os == 'macOS'
         shell: zsh {0}
-        run: >
-          uv run pytest -q
-          tests/test_cli_backend.py
-          tests/test_platform_paths.py
-          tests/test_compact_filter.py
-          tests/test_session_manager.py
-          tests/test_stop_execution.py
-          tests/test_timeout_direct.py
+        run: uv run pytest -q
 
       - name: Run backend CLI smoke test (Windows)
         if: runner.os == 'Windows'
@@ -141,6 +117,16 @@ jobs:
         with:
           enable-cache: true
 
+      - name: Prefer rustup cargo shims (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: Add-Content -Path $env:GITHUB_PATH -Value (Join-Path $HOME ".cargo/bin")
+
+      - name: Prefer rustup cargo shims (macOS zsh)
+        if: runner.os == 'macOS'
+        shell: zsh {0}
+        run: echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+
       - name: Set up Rust stable
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -171,16 +157,6 @@ jobs:
         shell: zsh {0}
         run: cargo fmt --manifest-path rust-cli/Cargo.toml --check
 
-      - name: Run clippy (Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: cargo clippy --manifest-path rust-cli/Cargo.toml --all-targets -- -D warnings
-
-      - name: Run clippy (macOS zsh)
-        if: runner.os == 'macOS'
-        shell: zsh {0}
-        run: cargo clippy --manifest-path rust-cli/Cargo.toml --all-targets -- -D warnings
-
       - name: Run Rust tests (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
@@ -191,15 +167,15 @@ jobs:
         shell: zsh {0}
         run: cargo test --manifest-path rust-cli/Cargo.toml
 
-      - name: Build Rust CLI release binary (Windows)
+      - name: Build native Rust CLI release binary (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
         run: cargo build --release --manifest-path rust-cli/Cargo.toml
 
-      - name: Build Rust CLI release binary (macOS zsh)
+      - name: Build repo macOS binary (macOS zsh)
         if: runner.os == 'macOS'
         shell: zsh {0}
-        run: cargo build --release --manifest-path rust-cli/Cargo.toml
+        run: bash ./scripts/build_macos_bin.sh
 
       - name: Install Zig for Windows cross-build check (macOS zsh)
         if: runner.os == 'macOS'

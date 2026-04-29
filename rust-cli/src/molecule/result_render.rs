@@ -118,8 +118,6 @@ mod tests {
             session_id: None,
             log_file: Some("/tmp/analysis.log".to_string()),
             graphs: Vec::new(),
-            artifacts: Vec::new(),
-            artifact_count: 0,
             partial_failures: Vec::new(),
             partial_failure_count: 0,
             error: None,

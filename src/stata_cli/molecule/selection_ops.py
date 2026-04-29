@@ -38,7 +38,6 @@ def run_selection_command(
     selection: str,
     session_id: str | None,
     working_dir: str | None,
-    timeout: int | None = None,
 ) -> ExecutionResult:
     state = get_runtime_state()
     config = state.active_config()
@@ -52,7 +51,6 @@ def run_selection_command(
     result = manager.execute(
         code,
         session_id=runtime_session_id,
-        timeout=float(timeout) if timeout else None,
     )
     output = (result.get("output") or "").replace("\\n", "\n")
     filtered = output if config.raw_output else process_output(

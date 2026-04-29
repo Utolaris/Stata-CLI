@@ -83,6 +83,38 @@ mod tests {
     }
 
     #[test]
+    fn run_command_keeps_working_dir_flag() {
+        let cli = Cli::parse_from([
+            "stata-cli",
+            "--working-dir",
+            "/tmp",
+            "run",
+            "--code",
+            "display 1+1",
+        ]);
+        assert_eq!(cli.working_dir, Some(PathBuf::from("/tmp")));
+        match cli.command {
+            Commands::Run { code } => assert_eq!(code, "display 1+1"),
+            _ => panic!("expected run command"),
+        }
+    }
+
+    #[test]
+    fn run_command_rejects_removed_timeout_flag() {
+        let error = Cli::try_parse_from([
+            "stata-cli",
+            "--timeout",
+            "17",
+            "run",
+            "--code",
+            "display 1+1",
+        ])
+        .unwrap_err()
+        .to_string();
+        assert!(error.contains("--timeout"));
+    }
+
+    #[test]
     fn deprecated_json_flag_still_parses() {
         let cli = Cli::parse_from(["stata-cli", "--json", "doctor"]);
         assert!(cli.json);
@@ -148,8 +180,6 @@ mod tests {
             "/Applications/Stata",
             "file",
             "tests/fixtures/test_stata.do",
-            "--timeout",
-            "60",
             "--working-dir",
             "/tmp",
         ]);
@@ -157,13 +187,9 @@ mod tests {
         assert_eq!(cli.stata_path.as_deref(), Some("/Applications/Stata"));
         match cli.command {
             Commands::File {
-                path,
-                timeout,
-                working_dir,
-                ..
+                path, working_dir, ..
             } => {
                 assert_eq!(path, PathBuf::from("tests/fixtures/test_stata.do"));
-                assert_eq!(timeout, Some(60));
                 assert_eq!(working_dir, Some(PathBuf::from("/tmp")));
             }
             _ => panic!("expected file command"),
@@ -367,12 +393,12 @@ mod tests {
     }
 
     #[test]
-    fn data_backend_invocation_absolutizes_relative_paths() {
+    fn data_backend_invocation_resolves_relative_output_against_working_dir() {
         let cwd = std::env::current_dir().unwrap();
         let command = DataCommands::ExportCsv {
-            output: PathBuf::from("scene/export.csv"),
+            output: PathBuf::from("export.csv"),
             input_dta: PathBuf::from("scene/grilic.dta"),
-            working_dir: Some(PathBuf::from(".")),
+            working_dir: Some(PathBuf::from("scene")),
             replace: true,
         };
 
@@ -383,9 +409,9 @@ mod tests {
             .map(PathBuf::from)
             .collect();
 
-        assert!(rendered.contains(&cwd.join("scene/export.csv")));
+        assert!(rendered.contains(&cwd.join("scene").join("export.csv")));
         assert!(rendered.contains(&cwd.join("scene/grilic.dta")));
-        assert!(rendered.contains(&cwd));
+        assert!(rendered.contains(&cwd.join("scene")));
     }
 
     #[test]

@@ -7,7 +7,7 @@ import os
 from typing import Any, cast
 
 from ..atom.output_filter import process_output
-from ..atom.pathing import build_selection_for_working_dir
+from ..atom.pathing import build_selection_for_working_dir, resolve_path_for_working_dir
 from ..atom.runtime_state import get_runtime_state
 from ..atom.session_identity import command_session_id
 
@@ -64,7 +64,7 @@ def data_export_csv_command(
     manager = state.active_session_manager()
     runtime_session_id = command_session_id(session_id, config)
 
-    output_path = os.path.abspath(os.path.expanduser(output))
+    output_path = resolve_path_for_working_dir(output, working_dir)
     output_dir = os.path.dirname(output_path)
     if output_dir:
         os.makedirs(output_dir, exist_ok=True)

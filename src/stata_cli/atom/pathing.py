@@ -37,6 +37,15 @@ def build_selection_for_working_dir(selection: str, working_dir: str | None) -> 
     return processed
 
 
+def resolve_path_for_working_dir(path: str, working_dir: str | None) -> str:
+    """Resolve a CLI path, anchoring relative outputs to the provided working directory."""
+    expanded = os.path.expanduser(path)
+    if os.path.isabs(expanded):
+        return os.path.abspath(expanded)
+    base_dir = os.path.expanduser(working_dir) if working_dir else os.getcwd()
+    return os.path.abspath(os.path.join(base_dir, expanded))
+
+
 def get_log_file_path(do_file_path: str, do_file_base: str, session_id: str | None = None) -> str:
     """Return the execution log path for a `.do` file run."""
     do_file_dir = os.path.dirname(os.path.abspath(do_file_path))

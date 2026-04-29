@@ -110,8 +110,6 @@ def bridge_command(session_id: str | None, working_dir: str | None) -> int:
             continue
 
         command = payload.get("command")
-        if command == "quit":
-            return 0
         if command == "complete_context":
             _emit_completion(_completion_snapshot(session_id))
             continue
@@ -125,13 +123,11 @@ def bridge_command(session_id: str | None, working_dir: str | None) -> int:
             continue
 
         request_working_dir = payload.get("working_dir")
-        timeout = payload.get("timeout")
         _emit(
             run_selection_command(
                 code,
                 session_id,
                 request_working_dir if isinstance(request_working_dir, str) else working_dir,
-                timeout if isinstance(timeout, int) else None,
             )
         )
 
@@ -151,8 +147,6 @@ def mock_bridge_command(session_id: str | None, working_dir: str | None) -> int:
             continue
 
         command = payload.get("command")
-        if command == "quit":
-            return 0
         if command == "complete_context":
             _emit_completion(
                 CompletionContextResult(

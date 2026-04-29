@@ -7,7 +7,7 @@ use anyhow::{bail, Context, Result};
 use serde_json::Value;
 use std::ffi::OsString;
 use std::io::Read;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Output, Stdio};
 use std::thread;
 use std::time::Duration;
@@ -111,16 +111,22 @@ pub(crate) fn data_backend_invocation(
             working_dir,
             replace,
         } => {
+            let resolved_working_dir = working_dir
+                .as_ref()
+                .map(|path| absolutize_cli_path(path))
+                .transpose()?;
+            let resolved_output =
+                resolve_data_output_path(output, resolved_working_dir.as_deref())?;
             let mut args = vec![
                 OsString::from("export-csv"),
                 OsString::from("--output"),
-                absolutize_cli_path(output)?.as_os_str().to_os_string(),
+                resolved_output.as_os_str().to_os_string(),
             ];
             args.push(OsString::from("--input-dta"));
             args.push(absolutize_cli_path(input_dta)?.as_os_str().to_os_string());
-            if let Some(working_dir) = working_dir {
+            if let Some(working_dir) = resolved_working_dir {
                 args.push(OsString::from("--working-dir"));
-                args.push(absolutize_cli_path(working_dir)?.as_os_str().to_os_string());
+                args.push(working_dir.as_os_str().to_os_string());
             }
             if *replace {
                 args.push(OsString::from("--replace"));
@@ -128,6 +134,19 @@ pub(crate) fn data_backend_invocation(
             Ok(("data", args))
         }
     }
+}
+
+fn resolve_data_output_path(output: &Path, working_dir: Option<&Path>) -> Result<PathBuf> {
+    if output.is_absolute() {
+        return Ok(output.to_path_buf());
+    }
+
+    let base_dir = match working_dir {
+        Some(path) => path.to_path_buf(),
+        None => std::env::current_dir()
+            .with_context(|| "Failed to resolve the current working directory".to_string())?,
+    };
+    Ok(base_dir.join(output))
 }
 
 pub(crate) fn invoke_backend(
@@ -161,13 +180,6 @@ pub(crate) fn invoke_backend_json(
     args.push(OsString::from(command_name));
     args.append(&mut command_args);
     args.extend(session_args(cli));
-
-    if let crate::atom::cli_contract::Commands::File { .. } = cli.command {
-        if let Some(timeout) = cli.timeout {
-            args.push(OsString::from("--timeout"));
-            args.push(OsString::from(timeout.to_string()));
-        }
-    }
 
     let mut command = Command::new(python);
     command.args(&args).current_dir(repo_root);

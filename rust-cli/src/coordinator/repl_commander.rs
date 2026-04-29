@@ -211,7 +211,7 @@ impl Highlighter for ReplHelper {
 
 struct BridgeClient {
     child: Child,
-    stdin: ChildStdin,
+    stdin: Option<ChildStdin>,
     stdout: BufReader<ChildStdout>,
 }
 
@@ -228,7 +228,7 @@ impl BridgeClient {
             .context("Backend bridge stdout was not available")?;
         Ok(Self {
             child,
-            stdin,
+            stdin: Some(stdin),
             stdout: BufReader::new(stdout),
         })
     }
@@ -237,14 +237,12 @@ impl BridgeClient {
         &mut self,
         code: &str,
         working_dir: Option<&str>,
-        timeout: Option<u32>,
         show_progress: bool,
     ) -> Result<ExecutionResult> {
         let request = BridgeRequest {
             command: "run".to_string(),
             code: Some(code.to_string()),
             working_dir: working_dir.map(ToOwned::to_owned),
-            timeout,
             prefix: None,
             context_kind: None,
         };
@@ -261,7 +259,6 @@ impl BridgeClient {
             command: "complete_context".to_string(),
             code: None,
             working_dir: None,
-            timeout: None,
             prefix: None,
             context_kind: None,
         };
@@ -270,23 +267,19 @@ impl BridgeClient {
     }
 
     fn shutdown(&mut self) -> Result<()> {
-        let request = BridgeRequest {
-            command: "quit".to_string(),
-            code: None,
-            working_dir: None,
-            timeout: None,
-            prefix: None,
-            context_kind: None,
-        };
-        let _ = self.send_request(&request);
+        let _ = self.stdin.take();
         let _ = self.child.wait();
         Ok(())
     }
 
     fn send_request(&mut self, request: &BridgeRequest) -> Result<()> {
+        let stdin = self
+            .stdin
+            .as_mut()
+            .context("Backend bridge stdin is already closed")?;
         let rendered = serde_json::to_string(request)?;
-        writeln!(self.stdin, "{rendered}")?;
-        self.stdin.flush()?;
+        writeln!(stdin, "{rendered}")?;
+        stdin.flush()?;
         Ok(())
     }
 
@@ -476,7 +469,7 @@ pub(crate) fn repl_command(cli: &Cli) -> Result<()> {
                 if buffer.is_empty() && stripped.is_empty() {
                     continue;
                 }
-                if buffer.is_empty() && (stripped == ":exit" || stripped == ":quit") {
+                if buffer.is_empty() && stripped == ":exit" {
                     break;
                 }
                 if !line.trim().is_empty() {
@@ -500,7 +493,6 @@ pub(crate) fn repl_command(cli: &Cli) -> Result<()> {
                 let result = match bridge.lock().expect("bridge mutex poisoned").execute(
                     &code,
                     request_working_dir.as_deref(),
-                    cli.timeout,
                     colorize,
                 ) {
                     Ok(result) => result,

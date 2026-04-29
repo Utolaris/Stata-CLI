@@ -143,7 +143,7 @@ def test_run_file_command_multi_session(monkeypatch):
     monkeypatch.setattr(file_ops, "resolve_do_file_path", lambda file_path: (file_path, []))
     monkeypatch.setattr(file_ops, "get_log_file_path", lambda *args: log_path)
 
-    result = backend.run_file_command(do_path, 30, "abc", None)
+    result = backend.run_file_command(do_path, "abc", None)
 
     assert result.status == "success"
     assert result.output == "file output"
@@ -182,7 +182,7 @@ analysis completed
     monkeypatch.setattr(file_ops, "resolve_do_file_path", lambda file_path: (file_path, []))
     monkeypatch.setattr(file_ops, "get_log_file_path", lambda *args: log_path)
 
-    result = backend.run_file_command(do_path, 30, "abc", None)
+    result = backend.run_file_command(do_path, "abc", None)
 
     assert result.status == "success"
     assert result.partial_failure_count == 1
@@ -221,7 +221,7 @@ r(601);
     monkeypatch.setattr(file_ops, "resolve_do_file_path", lambda file_path: (file_path, []))
     monkeypatch.setattr(file_ops, "get_log_file_path", lambda *args: log_path)
 
-    result = backend.run_file_command(do_path, 30, "abc", None)
+    result = backend.run_file_command(do_path, "abc", None)
 
     assert result.partial_failure_count == 2
     assert [failure.message for failure in result.partial_failures] == [
@@ -230,18 +230,13 @@ r(601);
     ]
 
 
-def test_run_file_command_reports_generated_artifacts(monkeypatch, tmp_path):
+def test_run_file_command_omits_artifact_fields(monkeypatch, tmp_path):
     do_path = tmp_path / "analysis.do"
     do_path.write_text("display 1\n", encoding="utf-8")
     log_path = str(tmp_path / "analysis_cli.log")
-    existing = tmp_path / "outputs" / "old.txt"
-    existing.parent.mkdir()
-    existing.write_text("before\n", encoding="utf-8")
 
     class DummyManager:
         def execute_file(self, *args, **kwargs):
-            (tmp_path / "outputs" / "table.rtf").write_text("table\n", encoding="utf-8")
-            existing.write_text("after\n", encoding="utf-8")
             Path(log_path).write_text("log\n", encoding="utf-8")
             return {
                 "status": "success",
@@ -256,15 +251,14 @@ def test_run_file_command_reports_generated_artifacts(monkeypatch, tmp_path):
     monkeypatch.setattr(file_ops, "resolve_do_file_path", lambda file_path: (str(do_path), []))
     monkeypatch.setattr(file_ops, "get_log_file_path", lambda *args: log_path)
 
-    result = backend.run_file_command(str(do_path), 30, "abc", str(tmp_path))
+    result = backend.run_file_command(str(do_path), "abc", str(tmp_path))
 
-    assert result.artifact_count == 2
-    artifact_paths = {Path(artifact.path).name for artifact in result.artifacts}
-    assert artifact_paths == {"table.rtf", "old.txt"}
-    assert all(Path(artifact.path).name != "analysis_cli.log" for artifact in result.artifacts)
+    assert not hasattr(result, "artifacts")
+    assert not hasattr(result, "artifact_count")
+    assert result.log_file == log_path
 
 
-def test_run_file_command_reports_artifacts_when_do_file_writes_to_project_root(monkeypatch, tmp_path):
+def test_run_file_command_still_allows_project_root_outputs_without_tracking_artifacts(monkeypatch, tmp_path):
     do_dir = tmp_path / "do"
     do_dir.mkdir()
     (tmp_path / "outputs").mkdir()
@@ -289,10 +283,11 @@ def test_run_file_command_reports_artifacts_when_do_file_writes_to_project_root(
     monkeypatch.setattr(file_ops, "resolve_do_file_path", lambda file_path: (str(do_path), []))
     monkeypatch.setattr(file_ops, "get_log_file_path", lambda *args: log_path)
 
-    result = backend.run_file_command(str(do_path), 30, "abc", None)
+    result = backend.run_file_command(str(do_path), "abc", None)
 
-    assert result.artifact_count == 1
-    assert result.artifacts[0].relative_path == "outputs/table.rtf"
+    assert result.status == "success"
+    assert not hasattr(result, "artifacts")
+    assert not hasattr(result, "artifact_count")
 
 
 def test_data_view_command_multi_session(monkeypatch):
@@ -419,6 +414,49 @@ def test_data_export_csv_command_single_session(monkeypatch, tmp_path):
     assert 'export delimited using "' in captured["selection"]
 
 
+def test_build_parser_rejects_removed_timeout_flags():
+    parser = backend.build_parser()
+
+    for argv in (
+        ["run", "--code", "display 1+1", "--timeout", "17"],
+        ["file", "sample.do", "--timeout", "45"],
+    ):
+        try:
+            parser.parse_args(argv)
+        except SystemExit as exc:
+            assert exc.code == 2
+        else:
+            raise AssertionError(f"Expected parser failure for argv={argv}")
+
+
+def test_data_export_csv_command_resolves_relative_output_against_working_dir(monkeypatch, tmp_path):
+    captured = {}
+
+    class DummyManager:
+        def execute(self, code, session_id=None, timeout=None):
+            captured["selection"] = code
+            return {"status": "success", "output": "ok", "session_id": session_id or "default"}
+
+    monkeypatch.setattr(data_ops, "get_runtime_state", lambda: DummyState(DummyManager(), multi_session=False))
+
+    input_dta = tmp_path / "sample.dta"
+    input_dta.write_text("placeholder", encoding="utf-8")
+    working_dir = tmp_path / "outputs"
+
+    result = backend.data_export_csv_command(
+        "result.csv",
+        str(input_dta),
+        None,
+        str(working_dir),
+        True,
+    )
+
+    expected_output = working_dir / "result.csv"
+    assert result["status"] == "success"
+    assert result["output_csv"] == str(expected_output.resolve())
+    assert str(expected_output.resolve()).replace("\\", "/") in captured["selection"]
+
+
 def test_run_selection_command_skips_python_filter_in_raw_mode(monkeypatch):
     class DummyManager:
         def execute(self, code, session_id=None, timeout=None):
@@ -469,7 +507,7 @@ def test_run_file_command_skips_python_filter_in_raw_mode(monkeypatch, tmp_path)
         lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("process_output should not run")),
     )
 
-    result = backend.run_file_command(do_path, 30, "abc", None)
+    result = backend.run_file_command(do_path, "abc", None)
 
     assert result.status == "success"
     assert result.output == ". do test.do\nresult\n"
@@ -515,8 +553,8 @@ def test_data_export_csv_command_skips_python_filter_in_raw_mode(monkeypatch, tm
 def test_bridge_command_routes_requests_to_backend(monkeypatch):
     calls = []
 
-    def fake_run_selection_command(code, session_id, working_dir, timeout=None):
-        calls.append((code, session_id, working_dir, timeout))
+    def fake_run_selection_command(code, session_id, working_dir):
+        calls.append((code, session_id, working_dir))
         return backend.ExecutionResult(
             status="success",
             output="bridge-result",
@@ -528,9 +566,7 @@ def test_bridge_command_routes_requests_to_backend(monkeypatch):
 
     monkeypatch.setattr(bridge_commander, "run_selection_command", fake_run_selection_command)
     stdin = io.StringIO(
-        json.dumps({"command": "run", "code": "display 1+1", "working_dir": "/tmp/test", "timeout": 17})
-        + "\n"
-        + json.dumps({"command": "quit"})
+        json.dumps({"command": "run", "code": "display 1+1", "working_dir": "/tmp/test"})
         + "\n"
     )
     stdout = io.StringIO()
@@ -540,7 +576,7 @@ def test_bridge_command_routes_requests_to_backend(monkeypatch):
     exit_code = bridge_commander.bridge_command("bridge-session", "/tmp/fallback")
 
     assert exit_code == 0
-    assert calls == [("display 1+1", "bridge-session", "/tmp/test", 17)]
+    assert calls == [("display 1+1", "bridge-session", "/tmp/test")]
     response = json.loads(stdout.getvalue().splitlines()[0])
     assert response["status"] == "success"
     assert response["output"] == "bridge-result"
@@ -569,7 +605,7 @@ def test_bridge_command_returns_completion_snapshot(monkeypatch):
             }
 
     monkeypatch.setattr(bridge_commander, "get_runtime_state", lambda: DummyState(DummyManager()))
-    stdin = io.StringIO(json.dumps({"command": "complete_context"}) + "\n" + json.dumps({"command": "quit"}) + "\n")
+    stdin = io.StringIO(json.dumps({"command": "complete_context"}) + "\n")
     stdout = io.StringIO()
     monkeypatch.setattr(bridge_commander.sys, "stdin", stdin)
     monkeypatch.setattr(bridge_commander.sys, "stdout", stdout)
@@ -587,8 +623,6 @@ def test_mock_bridge_command_returns_mocked_display_output(monkeypatch):
     stdin = io.StringIO(
         json.dumps({"command": "run", "code": "display 2+3", "working_dir": "/tmp/test"})
         + "\n"
-        + json.dumps({"command": "quit"})
-        + "\n"
     )
     stdout = io.StringIO()
     monkeypatch.setattr(bridge_commander.sys, "stdin", stdin)
@@ -604,7 +638,7 @@ def test_mock_bridge_command_returns_mocked_display_output(monkeypatch):
 
 
 def test_mock_bridge_command_returns_mocked_completion_snapshot(monkeypatch):
-    stdin = io.StringIO(json.dumps({"command": "complete_context"}) + "\n" + json.dumps({"command": "quit"}) + "\n")
+    stdin = io.StringIO(json.dumps({"command": "complete_context"}) + "\n")
     stdout = io.StringIO()
     monkeypatch.setattr(bridge_commander.sys, "stdin", stdin)
     monkeypatch.setattr(bridge_commander.sys, "stdout", stdout)

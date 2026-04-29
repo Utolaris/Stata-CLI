@@ -1,9 +1,13 @@
 use serde_json::Value;
 use std::env;
+use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use tempfile::tempdir;
+
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
 
 fn repo_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -31,6 +35,43 @@ fn base_command() -> Command {
     command.arg("--python").arg(python);
     command.arg("--stata-path").arg(fake_stata);
     command
+}
+
+fn write_fake_git(dir: &Path) -> PathBuf {
+    let path = if cfg!(windows) {
+        dir.join("git.cmd")
+    } else {
+        dir.join("git")
+    };
+
+    if cfg!(windows) {
+        fs::write(
+            &path,
+            "@echo off\r\nif \"%1\"==\"--version\" exit /b 0\r\nif \"%1\"==\"init\" (\r\n  mkdir .git >nul 2>nul\r\n  echo Initialized empty Git repository\r\n  exit /b 0\r\n)\r\nexit /b 1\r\n",
+        )
+        .unwrap();
+    } else {
+        fs::write(
+            &path,
+            "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then\n  exit 0\nfi\nif [ \"$1\" = \"init\" ]; then\n  mkdir -p .git\n  echo Initialized empty Git repository\n  exit 0\nfi\nexit 1\n",
+        )
+        .unwrap();
+        #[cfg(unix)]
+        {
+            let mut perms = fs::metadata(&path).unwrap().permissions();
+            perms.set_mode(0o755);
+            fs::set_permissions(&path, perms).unwrap();
+        }
+    }
+
+    path
+}
+
+fn prepend_path(dir: &Path) -> std::ffi::OsString {
+    let existing = env::var_os("PATH").unwrap_or_default();
+    let mut paths = vec![dir.to_path_buf()];
+    paths.extend(env::split_paths(&existing));
+    env::join_paths(paths).unwrap()
 }
 
 fn normalize_windows_path(path: &Path) -> String {
@@ -64,8 +105,6 @@ fn run_command_round_trips_through_python_backend() {
         .arg("rust-run")
         .arg("--working-dir")
         .arg(temp.path())
-        .arg("--timeout")
-        .arg("17")
         .arg("run")
         .arg("--code")
         .arg("display 1+1")
@@ -84,8 +123,34 @@ fn run_command_round_trips_through_python_backend() {
     let rendered_output = json["output"].as_str().unwrap();
     assert!(rendered_output.contains("mock-run"));
     assert!(rendered_output.contains("display 1+1"));
-    assert!(rendered_output.contains("timeout=17"));
     assert!(rendered_output.contains(temp.path().to_string_lossy().as_ref()));
+    assert!(!rendered_output.contains("timeout="));
+}
+
+#[test]
+fn run_command_errors_when_working_dir_does_not_exist() {
+    let missing_dir = env::temp_dir()
+        .join("stata-cli-missing-working-dir")
+        .join("nope");
+    let output = base_command()
+        .arg("--working-dir")
+        .arg(&missing_dir)
+        .arg("run")
+        .arg("--code")
+        .arg("display 1+1")
+        .output()
+        .unwrap();
+
+    assert!(
+        !output.status.success(),
+        "stdout: {}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("Working directory does not exist"),
+        "stderr: {stderr}"
+    );
 }
 
 #[test]
@@ -120,7 +185,7 @@ fn run_command_emits_long_task_heartbeat_on_stderr_without_polluting_stdout() {
 }
 
 #[test]
-fn file_command_returns_structured_python_artifacts() {
+fn file_command_returns_structured_python_result_without_artifacts() {
     let temp = tempdir().unwrap();
     let do_file = temp.path().join("sample.do");
     std::fs::write(&do_file, "display 1+1\n").unwrap();
@@ -132,8 +197,6 @@ fn file_command_returns_structured_python_artifacts() {
         .arg(&do_file)
         .arg("--working-dir")
         .arg(temp.path())
-        .arg("--timeout")
-        .arg("45")
         .output()
         .unwrap();
 
@@ -150,10 +213,12 @@ fn file_command_returns_structured_python_artifacts() {
     assert_eq!(json["session_id"], "rust-file");
     assert_eq!(json["log_file"], expected_log.to_string_lossy().as_ref());
     assert_eq!(json["graphs"], serde_json::json!([]));
+    assert!(json.get("artifacts").is_none());
+    assert!(json.get("artifact_count").is_none());
     let rendered_output = json["output"].as_str().unwrap();
     assert!(rendered_output.contains("mock-file"));
     assert!(rendered_output.contains("sample.do"));
-    assert!(rendered_output.contains("timeout=45"));
+    assert!(!rendered_output.contains("timeout="));
 }
 
 #[test]
@@ -208,13 +273,15 @@ fn doctor_command_checks_python_backend_probe() {
 fn init_command_creates_agent_workspace_scaffold() {
     let temp = tempdir().unwrap();
     let target = temp.path().join("my-analysis");
-    std::fs::create_dir_all(&target).unwrap();
+    fs::create_dir_all(&target).unwrap();
 
-    let output = base_command()
-        .arg("init")
-        .current_dir(&target)
-        .output()
-        .unwrap();
+    let fake_bin = temp.path().join("fake-bin");
+    fs::create_dir_all(&fake_bin).unwrap();
+    write_fake_git(&fake_bin);
+
+    let mut command = base_command();
+    std::process::Command::env(&mut command, "PATH", prepend_path(&fake_bin));
+    let output = command.arg("init").current_dir(&target).output().unwrap();
 
     assert!(
         output.status.success(),
@@ -231,21 +298,26 @@ fn init_command_creates_agent_workspace_scaffold() {
     assert!(target.join("do").join("analysis.do").exists());
     assert!(target.join("outputs").is_dir());
     assert!(target.join("scripts").join("plot.py").exists());
+    assert!(target.join(".git").is_dir());
     assert!(!target.join("stata-packages.md").exists());
 }
 
 #[test]
-fn init_command_overwrites_existing_scaffold_file() {
+fn init_command_warns_when_directory_is_already_in_git_repo() {
     let temp = tempdir().unwrap();
-    let target = temp.path().join("my-analysis");
-    std::fs::create_dir_all(&target).unwrap();
-    std::fs::write(target.join("AGENTS.md"), "existing\n").unwrap();
+    let repo_root = temp.path().join("repo");
+    let target = repo_root.join("nested").join("my-analysis");
+    fs::create_dir_all(&target).unwrap();
+    fs::create_dir_all(repo_root.join(".git")).unwrap();
+    fs::write(target.join("AGENTS.md"), "existing\n").unwrap();
 
-    let output = base_command()
-        .arg("init")
-        .current_dir(&target)
-        .output()
-        .unwrap();
+    let fake_bin = temp.path().join("fake-bin");
+    fs::create_dir_all(&fake_bin).unwrap();
+    write_fake_git(&fake_bin);
+
+    let mut command = base_command();
+    std::process::Command::env(&mut command, "PATH", prepend_path(&fake_bin));
+    let output = command.arg("init").current_dir(&target).output().unwrap();
 
     assert!(
         output.status.success(),
@@ -257,12 +329,47 @@ fn init_command_overwrites_existing_scaffold_file() {
     let resolved_target = std::fs::canonicalize(&target).unwrap();
     assert_eq!(json["status"], "success");
     assert_same_path(&json["target_dir"], &resolved_target);
-    let agents_text = std::fs::read_to_string(target.join("AGENTS.md")).unwrap();
+    let agents_text = fs::read_to_string(target.join("AGENTS.md")).unwrap();
     assert!(agents_text.contains("Keep main Stata analysis in `do/analysis.do`."));
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("already inside a Git repository"),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
 }
 
 #[test]
-fn repl_command_runs_native_loop_and_quits() {
+fn init_command_warns_when_git_is_missing() {
+    let temp = tempdir().unwrap();
+    let target = temp.path().join("my-analysis");
+    fs::create_dir_all(&target).unwrap();
+
+    let missing_path = temp.path().join("missing-git-bin");
+    fs::create_dir_all(&missing_path).unwrap();
+
+    let mut command = base_command();
+    std::process::Command::env(&mut command, "PATH", &missing_path);
+    let output = command.arg("init").current_dir(&target).output().unwrap();
+
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let json: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(json["status"], "success");
+    assert!(target.join("AGENTS.md").exists());
+    assert!(!target.join(".git").exists());
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("Git is not installed"),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
+fn repl_command_runs_native_loop_and_exits() {
     let temp = tempdir().unwrap();
     let mut child = base_command()
         .arg("--working-dir")
@@ -276,7 +383,7 @@ fn repl_command_runs_native_loop_and_quits() {
 
     {
         let stdin = child.stdin.as_mut().expect("repl stdin should exist");
-        stdin.write_all(b"display 2+3\n:quit\n").unwrap();
+        stdin.write_all(b"display 2+3\n:exit\n").unwrap();
     }
 
     let output = child.wait_with_output().unwrap();
@@ -316,7 +423,7 @@ fn bridge_command_returns_completion_snapshot_in_test_mode() {
     {
         let stdin = child.stdin.as_mut().expect("bridge stdin should exist");
         stdin
-            .write_all(b"{\"command\":\"complete_context\"}\n{\"command\":\"quit\"}\n")
+            .write_all(b"{\"command\":\"complete_context\"}\n")
             .unwrap();
     }
 
@@ -394,6 +501,42 @@ fn data_commands_round_trip_through_python_backend() {
         csv_path.to_string_lossy().as_ref()
     );
     assert!(csv_path.exists());
+}
+
+#[test]
+fn data_export_csv_resolves_relative_output_against_working_dir() {
+    let temp = tempdir().unwrap();
+    let working_dir = temp.path().join("outputs");
+    let dta_path = temp.path().join("sample.dta");
+    fs::write(&dta_path, "mock dta content\n").unwrap();
+
+    let export_output = base_command()
+        .arg("data")
+        .arg("export-csv")
+        .arg("--input-dta")
+        .arg(&dta_path)
+        .arg("--working-dir")
+        .arg(&working_dir)
+        .arg("--output")
+        .arg("result.csv")
+        .arg("--replace")
+        .output()
+        .unwrap();
+
+    assert!(
+        export_output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&export_output.stderr)
+    );
+
+    let export_json: Value = serde_json::from_slice(&export_output.stdout).unwrap();
+    let expected_output = working_dir.join("result.csv");
+    assert_eq!(export_json["status"], "success");
+    assert_eq!(
+        export_json["output_csv"],
+        expected_output.to_string_lossy().as_ref()
+    );
+    assert!(expected_output.exists());
 }
 
 #[test]

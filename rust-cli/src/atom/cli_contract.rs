@@ -15,8 +15,6 @@ pub(crate) struct Cli {
     pub(crate) session_id: Option<String>,
     #[arg(long)]
     pub(crate) working_dir: Option<PathBuf>,
-    #[arg(long)]
-    pub(crate) timeout: Option<u32>,
     #[arg(long, hide = true)]
     pub(crate) json: bool,
     #[arg(long)]
@@ -47,8 +45,6 @@ pub(crate) enum Commands {
     },
     File {
         path: PathBuf,
-        #[arg(long)]
-        timeout: Option<u32>,
         #[arg(long, hide = true)]
         session_id: Option<String>,
         #[arg(long)]

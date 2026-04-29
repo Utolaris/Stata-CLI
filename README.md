@@ -117,7 +117,7 @@ stata-cli file /absolute/path/to/script.do
 ```
 
 Use this for substantial Stata analysis. It is the preferred path for agent-driven work because code, logs, and generated files stay inside the project workspace.
-The JSON response keeps `output` to the final tail of the Stata log for quick error location; read `log_file` or the returned `artifacts` when the full result is needed.
+The JSON response keeps `output` to the final tail of the Stata log for quick error location; read `log_file` when the full result is needed.
 
 ### Start the REPL
 
@@ -160,7 +160,7 @@ Then keep the working pattern simple:
 - Include `capture log close` and `set more off`
 - Write full text output to `outputs/result.txt`
 - Run the analysis with `stata-cli file do/analysis.do`
-- Use the JSON response to inspect `status`, `error`, `partial_failure_count`, `partial_failures`, `artifact_count`, `artifacts`, `log_file`, and `graphs`
+- Use the JSON response to inspect `status`, `error`, `partial_failure_count`, `partial_failures`, `log_file`, and `graphs`
 - Use `data view` for schema checks and small previews, not full table dumps
 - Use Python scripts under `scripts/` for final charts saved into `outputs/`
 - If the user explicitly wants Stata graphs, write explicit `graph export "outputs/..."` commands in the `.do` file instead of relying on CLI graph capture

@@ -100,3 +100,17 @@ pub(crate) fn validate_stata_path(path: &Path) -> Result<()> {
     }
     Ok(())
 }
+
+pub(crate) fn validate_existing_working_dir(path: &Path) -> Result<PathBuf> {
+    let resolved = absolutize_cli_path(path)?;
+    if !resolved.exists() {
+        bail!("Working directory does not exist: {}", resolved.display());
+    }
+    if !resolved.is_dir() {
+        bail!(
+            "Working directory is not a directory: {}",
+            resolved.display()
+        );
+    }
+    Ok(resolved)
+}

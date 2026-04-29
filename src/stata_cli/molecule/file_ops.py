@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import os
 
-from ..atom.artifact_tracker import artifact_scan_roots, diff_artifacts, snapshot_files
 from ..atom.contracts import ExecutionResult, GraphArtifact
 from ..atom.output_filter import process_output
 from ..atom.partial_failure_parser import parse_partial_failures
@@ -24,7 +23,6 @@ def _graphs_from_result(result: dict) -> list[GraphArtifact]:
 
 def run_file_command(
     file_path: str,
-    timeout: int,
     session_id: str | None,
     working_dir: str | None,
 ) -> ExecutionResult:
@@ -32,7 +30,6 @@ def run_file_command(
     config = state.active_config()
     manager = state.active_session_manager()
 
-    timeout = 600 if timeout <= 0 else int(timeout)
     resolved_path, tried_paths = resolve_do_file_path(file_path)
     effective_path = resolved_path or os.path.abspath(file_path)
     if not resolved_path:
@@ -49,26 +46,16 @@ def run_file_command(
     base_name = os.path.splitext(os.path.basename(effective_path))[0]
     log_file = get_log_file_path(effective_path, base_name, session_id)
     os.makedirs(os.path.dirname(log_file), exist_ok=True)
-    scan_roots = artifact_scan_roots(effective_path, working_dir)
-    before_files = snapshot_files(scan_roots)
 
     result = manager.execute_file(
         effective_path,
         session_id=command_session_id(session_id, config),
-        timeout=float(timeout),
         log_file=log_file,
         working_dir=working_dir,
     )
-    after_files = snapshot_files(scan_roots)
     output = (result.get("output") or "").replace("\\n", "\n")
     partial_failures = parse_partial_failures(output)
     result_log_file = result.get("log_file") or log_file
-    artifacts = diff_artifacts(
-        before_files,
-        after_files,
-        scan_roots,
-        exclude_paths={effective_path, result_log_file},
-    )
     filtered = output if config.raw_output else process_output(
         output,
         result_display_mode=config.result_display_mode,
@@ -87,8 +74,6 @@ def run_file_command(
         session_id=presented_session_id(session_id, result.get("session_id"), config),
         log_file=result_log_file,
         graphs=_graphs_from_result(result),
-        artifacts=artifacts,
-        artifact_count=len(artifacts),
         partial_failures=partial_failures,
         partial_failure_count=len(partial_failures),
         error=error,

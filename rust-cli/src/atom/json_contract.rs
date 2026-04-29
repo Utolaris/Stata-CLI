@@ -7,13 +7,6 @@ pub(crate) struct GraphArtifact {
 }
 
 #[derive(Debug, Deserialize, Serialize)]
-pub(crate) struct ExecutionArtifact {
-    pub(crate) path: String,
-    pub(crate) relative_path: Option<String>,
-    pub(crate) size_bytes: Option<u64>,
-}
-
-#[derive(Debug, Deserialize, Serialize)]
 pub(crate) struct PartialFailure {
     pub(crate) line: Option<u32>,
     pub(crate) command: Option<String>,
@@ -30,10 +23,6 @@ pub(crate) struct ExecutionResult {
     #[serde(default)]
     pub(crate) graphs: Vec<GraphArtifact>,
     #[serde(default)]
-    pub(crate) artifacts: Vec<ExecutionArtifact>,
-    #[serde(default)]
-    pub(crate) artifact_count: u64,
-    #[serde(default)]
     pub(crate) partial_failures: Vec<PartialFailure>,
     #[serde(default)]
     pub(crate) partial_failure_count: u64,
@@ -45,7 +34,6 @@ pub(crate) struct BridgeRequest {
     pub(crate) command: String,
     pub(crate) code: Option<String>,
     pub(crate) working_dir: Option<String>,
-    pub(crate) timeout: Option<u32>,
     pub(crate) prefix: Option<String>,
     pub(crate) context_kind: Option<String>,
 }
