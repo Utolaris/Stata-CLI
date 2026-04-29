@@ -790,7 +790,29 @@ class SessionManager:
                 "error": f"Session not found: {session_id or 'default'}"
             }
 
-        if session.state != SessionState.READY:
+        if session.state == SessionState.BUSY:
+            self._logger.info(f"Session {session.session_id} is busy, creating new session for parallel data retrieval")
+            new_session_id = str(uuid.uuid4())[:8]
+            create_result = self.create_session(new_session_id)
+            if create_result.get('success'):
+                session = self.get_session(new_session_id)
+                if session is None:
+                    return {
+                        "status": "error",
+                        "error": "Failed to get newly created session"
+                    }
+            else:
+                return {
+                    "status": "error",
+                    "error": f"Session busy and failed to create new session: {create_result.get('error', 'Unknown error')}"
+                }
+        elif session.state == SessionState.CREATING:
+            if not self._wait_for_session_ready(session, timeout or 30.0):
+                return {
+                    "status": "error",
+                    "error": f"Session not ready: {session.state.value}"
+                }
+        elif session.state != SessionState.READY:
             return {
                 "status": "error",
                 "error": f"Session not ready: {session.state.value}"
@@ -818,6 +840,25 @@ class SessionManager:
                 "max_rows": extra.get('max_rows', max_rows)
             }
         return result
+
+    def _wait_for_session_ready(self, session: Session, timeout: float) -> bool:
+        """Wait briefly for an asynchronously starting session to become ready."""
+        deadline = time.time() + max(timeout, 0.0)
+        while time.time() < deadline:
+            if session.state == SessionState.READY:
+                return True
+            if session.state == SessionState.ERROR:
+                return False
+            if session.process is None:
+                session.state = SessionState.ERROR
+                session.error_message = "Worker process is not available"
+                return False
+            if not session.process.is_alive():
+                session.state = SessionState.ERROR
+                session.error_message = "Worker process died"
+                return False
+            time.sleep(0.01)
+        return session.state == SessionState.READY
 
     def stop_execution(self, session_id: str | None = None) -> dict[str, Any]:
         """
@@ -884,7 +925,12 @@ class SessionManager:
         command_id = str(uuid.uuid4())[:8]
 
         # Check worker health
-        if session.process and not session.process.is_alive():
+        if session.process is None:
+            session.state = SessionState.ERROR
+            session.error_message = "Worker process is not available"
+            return {"status": "error", "error": "Worker process is not available"}
+
+        if not session.process.is_alive():
             session.state = SessionState.ERROR
             session.error_message = "Worker process died"
             return {"status": "error", "error": "Worker process died"}
@@ -924,7 +970,17 @@ class SessionManager:
                     now = time.time()
                     if now - last_health_check >= health_interval:
                         last_health_check = now
-                        if session.process and not session.process.is_alive():
+                        if session.process is None:
+                            with self._lock:
+                                session.state = SessionState.ERROR
+                                session.current_command_id = None
+                                session.error_message = "Worker process is not available"
+                            return {
+                                "status": "error",
+                                "error": "Worker process is not available",
+                                "session_id": session.session_id
+                            }
+                        if not session.process.is_alive():
                             with self._lock:
                                 session.state = SessionState.ERROR
                                 session.current_command_id = None

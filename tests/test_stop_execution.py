@@ -272,6 +272,21 @@ class TestStopEventClearing(unittest.TestCase):
         self.assertLess(clear_after_busy, cancelled_after_busy,
                         "stop_event.clear() should come BEFORE cancelled = False")
 
+    def test_worker_process_closes_devnull_stdout_in_finally(self):
+        """Verify worker_process closes its redirected stdout handle during cleanup."""
+        import inspect
+
+        from stata_cli.atom.worker_process import worker_process
+
+        source = inspect.getsource(worker_process)
+
+        open_pos = source.find("stdout_devnull = open(os.devnull, 'w')")
+        close_pos = source.find("stdout_devnull.close()")
+
+        self.assertGreater(open_pos, 0, "stdout devnull redirection not found in source")
+        self.assertGreater(close_pos, 0, "stdout devnull cleanup not found in source")
+        self.assertGreater(close_pos, open_pos, "stdout devnull should be closed after it is opened")
+
 
 class TestMonitorThreadErrorHandling(unittest.TestCase):
     """

@@ -321,13 +321,15 @@ def worker_process(
     # CRITICAL: Redirect stdout to devnull immediately to prevent worker output
     # from appearing in parent process stdout (which VS Code pipes to output channel).
     # This prevents duplicate output - the SSE stream is the only output path.
-    sys.stdout = open(os.devnull, 'w')
+    stdout_devnull = open(os.devnull, 'w')
+    sys.stdout = stdout_devnull
 
     worker_state = WorkerState.CREATED
     stata = None
     stlib = None
     cancelled = False
     worker_temp_dir = None  # Track temp directory for cleanup
+    pystata_output_devnull = None
 
     # Set default graphs directory if not provided
     if graphs_dir is not None:
@@ -399,8 +401,8 @@ def worker_process(
             # to prevent duplicate output (we capture output via log files, not stdout)
             if platform.system() == 'Windows':
                 # Create a devnull text wrapper for PyStata output
-                devnull_file = open(os.devnull, 'w', encoding='utf-8')
-                config.stoutputf = devnull_file
+                pystata_output_devnull = open(os.devnull, 'w', encoding='utf-8')
+                config.stoutputf = pystata_output_devnull
 
             # === SET UNIQUE RANDOM SEED FOR THIS WORKER ===
             # This ensures each parallel session has independent random state
@@ -1027,6 +1029,17 @@ capture log close _all
         if monitor_thread is not None and monitor_thread.is_alive():
             monitor_thread.join(timeout=1.0)
         worker_state = WorkerState.STOPPED
+
+        if pystata_output_devnull is not None:
+            try:
+                pystata_output_devnull.close()
+            except Exception:
+                pass
+
+        try:
+            stdout_devnull.close()
+        except Exception:
+            pass
 
         # Clean up temporary directory to prevent disk space leakage
         if worker_temp_dir and os.path.exists(worker_temp_dir):

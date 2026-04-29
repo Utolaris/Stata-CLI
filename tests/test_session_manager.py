@@ -20,6 +20,7 @@ import sys
 import threading
 import time
 import unittest
+from unittest.mock import patch
 
 # Add src to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
@@ -427,6 +428,37 @@ class TestParallelExecution(unittest.TestCase):
 class TestSessionCleanup(unittest.TestCase):
     """Test session cleanup and health monitoring"""
 
+    def test_execute_command_errors_when_session_process_is_missing(self):
+        """Missing worker process should fail immediately instead of waiting for timeout."""
+        manager = SessionManager(
+            stata_path=STATA_PATH,
+            stata_edition=STATA_EDITION,
+            enabled=False,
+            command_timeout=10,
+        )
+
+        session = Session(
+            session_id="missing-process",
+            process=None,
+            command_queue=queue.Queue(),
+            result_queue=queue.Queue(),
+            state=SessionState.READY,
+        )
+
+        timeline = iter([100.0, 100.1, 100.2, 106.0])
+        with patch("stata_cli.atom.session_manager.time.time", side_effect=lambda: next(timeline)):
+            result = manager._execute_command(  # noqa: SLF001 - targeted regression test
+                session,
+                CommandType.EXECUTE,
+                {"code": 'display "hi"', "timeout": 1},
+                timeout=1,
+            )
+
+        assert result["status"] == "error"
+        assert result["error"] == "Worker process is not available"
+        assert session.state == SessionState.ERROR
+        assert session.error_message == "Worker process is not available"
+
     def test_execute_command_detects_worker_death_during_wait(self):
         """Worker death during a long command should return before command timeout."""
         manager = SessionManager(
@@ -472,6 +504,64 @@ class TestSessionCleanup(unittest.TestCase):
         assert result["status"] == "error"
         assert result["error"] == "Worker process died during execution"
         assert session.state == SessionState.ERROR
+
+    def test_get_data_waits_for_creating_session_to_become_ready(self):
+        """Data requests should wait briefly for an asynchronously starting session."""
+        manager = SessionManager(
+            stata_path=STATA_PATH,
+            stata_edition=STATA_EDITION,
+            enabled=False,
+            worker_start_timeout=1,
+        )
+
+        class AliveProcess:
+            def is_alive(self):
+                return True
+
+        session = Session(
+            session_id="creating-session",
+            process=AliveProcess(),
+            command_queue=queue.Queue(),
+            result_queue=queue.Queue(),
+            state=SessionState.CREATING,
+        )
+
+        with manager._lock:  # noqa: SLF001 - set up an isolated synthetic session
+            manager._sessions[session.session_id] = session
+
+        def mark_ready():
+            time.sleep(0.02)
+            session.state = SessionState.READY
+
+        thread = threading.Thread(target=mark_ready)
+        thread.start()
+
+        def fake_execute(target_session, command_type, payload, timeout):
+            assert target_session is session
+            assert command_type == CommandType.GET_DATA
+            return {
+                "status": "success",
+                "extra": {
+                    "data": [[1]],
+                    "columns": ["x"],
+                    "dtypes": {"x": "int64"},
+                    "rows": 1,
+                    "index": [0],
+                    "total_rows": 1,
+                    "displayed_rows": 1,
+                    "max_rows": payload["max_rows"],
+                },
+            }
+
+        with patch.object(manager, "_execute_command", side_effect=fake_execute):
+            result = manager.get_data(session_id=session.session_id, max_rows=5, timeout=0.5)
+
+        thread.join(timeout=1.0)
+
+        assert result["status"] == "success"
+        assert result["data"] == [[1]]
+        assert result["columns"] == ["x"]
+        assert result["max_rows"] == 5
 
     @skip_if_no_stata
     def test_list_sessions(self):
