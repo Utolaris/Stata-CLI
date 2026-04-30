@@ -13,6 +13,7 @@
 - Use Stata by default for cleaning, regression, and statistical tests.
 - Use Python by default for final charts and save them into `outputs/`.
 - If the user explicitly wants Stata graphs, export them explicitly to `outputs/` with `graph export`
+- Do not use Stata GUI-only commands in `.do` files or CLI snippets when they start with `browse`, `edit`, `db`, `dialog`, `window`, `shell`, or `winexec`.
 - Do not install third-party commands without the user's permission. You should ask for their consent.
 - Use `stata-cli run -code` to execute a one-time command such as `ssc install`
-- Read the local `stata-cli` skill when you need Stata syntax help, package guidance, or idiomatic patterns.
+- Read the `skills/stata-cli` skill when you need Stata syntax help, package guidance, or idiomatic patterns.

@@ -88,6 +88,57 @@ def test_run_selection_command_waits_for_booting_default_session(monkeypatch):
     assert any(event[0] == "execute" for event in events)
 
 
+def test_run_selection_command_redirects_help_topics_to_skill_guidance(monkeypatch):
+    class DummyManager:
+        def __init__(self):
+            self.executed = False
+
+        def execute(self, code, session_id=None, timeout=None):
+            self.executed = True
+            return {"status": "success", "output": "unexpected", "session_id": session_id or "default"}
+
+    manager = DummyManager()
+    monkeypatch.setattr(selection_ops, "get_runtime_state", lambda: DummyState(manager, multi_session=False))
+
+    result = backend.run_selection_command("help estout", None, None)
+
+    assert result.status == "success"
+    assert "help estout" in result.output
+    assert "skills/stata-cli/SKILL.md" in result.output
+    assert "packages/estout.md" in result.output
+    assert manager.executed is False
+
+
+def test_run_selection_command_blocks_gui_only_stata_prefixes(monkeypatch):
+    class DummyManager:
+        def __init__(self):
+            self.executed = False
+
+        def execute(self, code, session_id=None, timeout=None):
+            self.executed = True
+            return {"status": "success", "output": "unexpected", "session_id": session_id or "default"}
+
+    blocked_commands = [
+        "browse",
+        "edit price",
+        "db regress",
+        "dialog summarize",
+        "window manage forward results",
+        "shell ls",
+        "winexec notepad.exe",
+    ]
+
+    for command in blocked_commands:
+        manager = DummyManager()
+        monkeypatch.setattr(selection_ops, "get_runtime_state", lambda manager=manager: DummyState(manager, multi_session=False))
+
+        result = backend.run_selection_command(command, None, None)
+
+        assert result.status == "error"
+        assert result.error == "This command opens a Stata GUI dialog and is not suitable for CLI execution."
+        assert manager.executed is False
+
+
 def test_run_selection_command_returns_boot_error_when_default_session_never_readies(monkeypatch):
     class DummySession:
         def __init__(self):

@@ -222,6 +222,113 @@ fn file_command_returns_structured_python_result_without_artifacts() {
 }
 
 #[test]
+fn file_command_prompts_and_continues_when_gui_command_is_confirmed() {
+    let temp = tempdir().unwrap();
+    let do_file = temp.path().join("gui.do");
+    fs::write(&do_file, "capture browse\n").unwrap();
+
+    let mut child = base_command()
+        .arg("file")
+        .arg(&do_file)
+        .arg("--working-dir")
+        .arg(temp.path())
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+
+    child
+        .stdin
+        .as_mut()
+        .expect("stdin should exist")
+        .write_all(b"y\n")
+        .unwrap();
+
+    let output = child.wait_with_output().unwrap();
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("This command opens a Stata GUI dialog"));
+    assert!(stderr.contains("Continue anyway? [y/n]:"));
+    let json: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(json["status"], "success");
+}
+
+#[test]
+fn file_command_cancels_when_gui_command_is_rejected() {
+    let temp = tempdir().unwrap();
+    let do_file = temp.path().join("gui.do");
+    fs::write(&do_file, "quietly window manage forward results\n").unwrap();
+
+    let mut child = base_command()
+        .arg("file")
+        .arg(&do_file)
+        .arg("--working-dir")
+        .arg(temp.path())
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+
+    child
+        .stdin
+        .as_mut()
+        .expect("stdin should exist")
+        .write_all(b"n\n")
+        .unwrap();
+
+    let output = child.wait_with_output().unwrap();
+    assert!(
+        !output.status.success(),
+        "stdout: {}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+    assert!(
+        output.stdout.is_empty(),
+        "stdout: {}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("This command opens a Stata GUI dialog"));
+    assert!(stderr.contains("Execution cancelled by user after GUI command warning"));
+}
+
+#[test]
+fn file_command_cancels_on_eof_after_gui_command_warning() {
+    let temp = tempdir().unwrap();
+    let do_file = temp.path().join("gui.do");
+    fs::write(&do_file, "shell ls\n").unwrap();
+
+    let mut child = base_command()
+        .arg("file")
+        .arg(&do_file)
+        .arg("--working-dir")
+        .arg(temp.path())
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    drop(child.stdin.take());
+
+    let output = child.wait_with_output().unwrap();
+    assert!(!output.status.success());
+    assert!(
+        output.stdout.is_empty(),
+        "stdout: {}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("Continue anyway? [y/n]:"));
+    assert!(stderr.contains("Execution cancelled by user after GUI command warning"));
+}
+
+#[test]
 fn file_command_preserves_partial_failures_from_python_backend() {
     let temp = tempdir().unwrap();
     let do_file = temp.path().join("sample.do");
@@ -294,6 +401,15 @@ fn init_command_creates_agent_workspace_scaffold() {
     assert_eq!(json["status"], "success");
     assert_same_path(&json["target_dir"], &resolved_target);
     assert!(target.join("AGENTS.md").exists());
+    let agents_text = fs::read_to_string(target.join("AGENTS.md")).unwrap();
+    assert!(
+        agents_text.contains("Do not use Stata GUI-only commands in `.do` files or CLI snippets")
+    );
+    assert!(target
+        .join("skills")
+        .join("stata-cli")
+        .join("SKILL.md")
+        .exists());
     assert!(target.join("data").is_dir());
     assert!(target.join("do").join("analysis.do").exists());
     assert!(target.join("outputs").is_dir());
@@ -331,6 +447,7 @@ fn init_command_warns_when_directory_is_already_in_git_repo() {
     assert_same_path(&json["target_dir"], &resolved_target);
     let agents_text = fs::read_to_string(target.join("AGENTS.md")).unwrap();
     assert!(agents_text.contains("Keep main Stata analysis in `do/analysis.do`."));
+    assert!(agents_text.contains("If you need guidance related to one of those GUI-only commands"));
     assert!(
         String::from_utf8_lossy(&output.stderr).contains("already inside a Git repository"),
         "stderr: {}",

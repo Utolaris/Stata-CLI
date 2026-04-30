@@ -62,17 +62,7 @@ If you have Bash available on Windows, you can also run:
 bash ./scripts/build_windows_bin.sh
 ```
 
-### 4. Locate the bundled skill
-
-The bundled Stata skill lives at:
-
-```text
-skills/stata-cli/
-```
-
-If your AI tool supports installable local skills, point it at that directory and install it using the tool's own workflow.
-
-### 5. Verify the setup
+### 4. Verify the setup
 
 ```bash
 stata-cli doctor
@@ -87,7 +77,7 @@ stata-cli doctor
 - Inspect and export `.dta` data with `stata-cli data view` and `stata-cli data export-csv`
 - Diagnose the local Python/Stata backend with `stata-cli doctor`
 - Bootstrap an AI-friendly project scaffold with `stata-cli init`
-- Use the bundled `skills/stata-cli/` guidance to help AI agents write safer, more idiomatic Stata code
+- Use the bundled Stata skill that `stata-cli init` places under `skills/stata-cli/` in each workspace
 - Use the standalone `stata-cli repl` for human interactive work, including syntax highlighting and code completion
 
 Non-REPL commands are intentionally AI-friendly: they return structured JSON and avoid dumping unnecessary terminal noise into stdout.
@@ -101,6 +91,7 @@ stata-cli init
 ```
 
 `stata-cli init` copies the repo-root `boilerplate/` scaffold into the current directory, giving each analysis project a predictable structure for data, Stata code, outputs, helper scripts, and agent instructions.
+The scaffold also includes a local `skills/stata-cli/` reference library for AI agents.
 
 ### Run Stata code
 
@@ -165,7 +156,7 @@ Then keep the working pattern simple:
 - Use Python scripts under `scripts/` for final charts saved into `outputs/`
 - If the user explicitly wants Stata graphs, write explicit `graph export "outputs/..."` commands in the `.do` file instead of relying on CLI graph capture
 - Run `which <command>` before using third-party Stata packages, and ask before installing anything
-- If the local `stata-cli` skill is available, use it for Stata syntax, package guidance, and idiomatic patterns
+- Read the workspace-local `skills/stata-cli/` reference library when you need Stata syntax, package guidance, or idiomatic patterns
 
 ### Export data to CSV
 

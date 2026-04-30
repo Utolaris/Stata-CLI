@@ -22,7 +22,7 @@ mod tests {
     };
     use crate::molecule::repo_resolution::{resolve_python, resolve_repo_root, PROJECT_ROOT_ENV};
     use crate::molecule::stata_path_resolution::resolve_windows_stata_path_with_prompt;
-    use clap::Parser;
+    use clap::{CommandFactory, Parser};
     use std::fs;
     use std::path::{Path, PathBuf};
     use tempfile::tempdir;
@@ -112,6 +112,13 @@ mod tests {
         .unwrap_err()
         .to_string();
         assert!(error.contains("--timeout"));
+    }
+
+    #[test]
+    fn help_output_hides_deprecated_quiet_flag() {
+        let mut command = Cli::command();
+        let help = command.render_long_help().to_string();
+        assert!(!help.contains("--quiet"));
     }
 
     #[test]

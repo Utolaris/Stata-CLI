@@ -5,6 +5,7 @@ pub(crate) mod completion_catalog;
 pub(crate) mod completion_context;
 pub(crate) mod completion_render;
 pub(crate) mod config_store;
+pub(crate) mod do_file_scan;
 pub(crate) mod json_contract;
 pub(crate) mod output_filtering;
 pub(crate) mod path_ops;

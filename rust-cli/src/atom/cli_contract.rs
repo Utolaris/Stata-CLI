@@ -17,7 +17,7 @@ pub(crate) struct Cli {
     pub(crate) working_dir: Option<PathBuf>,
     #[arg(long, hide = true)]
     pub(crate) json: bool,
-    #[arg(long)]
+    #[arg(long, hide = true)]
     pub(crate) quiet: bool,
     #[arg(long, default_value = "WARNING")]
     pub(crate) log_level: String,

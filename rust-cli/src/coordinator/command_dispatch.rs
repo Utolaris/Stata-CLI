@@ -1,4 +1,5 @@
 use crate::atom::cli_contract::{Cli, Commands};
+use crate::atom::do_file_scan::{confirm_gui_command_execution, scan_do_file_for_gui_commands};
 use crate::atom::json_contract::{DoctorCheck, ResolvedStataPath};
 use crate::atom::path_ops::{
     absolutize_cli_path, backend_entry, default_config_path, validate_existing_working_dir,
@@ -64,6 +65,10 @@ pub(crate) fn run() -> Result<()> {
             let python = resolve_python(effective_cli.python.as_deref(), &repo_root.path)?;
             let mut file_cli = effective_cli.clone();
             let resolved_path = absolutize_cli_path(path)?;
+            let gui_hits = scan_do_file_for_gui_commands(&resolved_path)?;
+            if !gui_hits.is_empty() && !confirm_gui_command_execution(&resolved_path, &gui_hits)? {
+                bail!("Execution cancelled by user after GUI command warning");
+            }
             if session_id.is_some() {
                 file_cli.session_id = session_id.clone();
             }
