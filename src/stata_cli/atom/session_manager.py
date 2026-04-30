@@ -21,6 +21,7 @@ Architecture:
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import multiprocessing
 import os
@@ -160,11 +161,8 @@ class SessionManager:
 
         # Set spawn method for clean process isolation (required for PyStata)
         # Must be called before any Process creation
-        try:
+        with contextlib.suppress(RuntimeError):
             multiprocessing.set_start_method('spawn', force=True)
-        except RuntimeError:
-            # Already set - that's fine
-            pass
 
         self._logger = logging.getLogger(__name__)
 
@@ -197,8 +195,8 @@ class SessionManager:
             if not success:
                 self._logger.error("Failed to create default session")
                 return False
-        except Exception as e:
-            self._logger.error(f"Error creating default session: {e}")
+        except Exception:
+            self._logger.exception("Error creating default session")
             return False
 
         # Start cleanup thread
@@ -229,8 +227,8 @@ class SessionManager:
         for session_id in session_ids:
             try:
                 self.destroy_session(session_id, force=True)
-            except Exception as e:
-                self._logger.error(f"Error destroying session {session_id}: {e}")
+            except Exception:
+                self._logger.exception("Error destroying session %s", session_id)
 
         self._logger.info("Session manager stopped")
 
@@ -264,8 +262,7 @@ class SessionManager:
         success = self._create_session_internal(session_id, is_default=False)
         if success:
             return {"success": True, "session_id": session_id, "error": ""}
-        else:
-            return {"success": False, "session_id": "", "error": "Failed to create worker process"}
+        return {"success": False, "session_id": "", "error": "Failed to create worker process"}
 
     def _create_session_internal(
         self,
@@ -284,7 +281,7 @@ class SessionManager:
         Returns:
             True if created successfully
         """
-        self._logger.info(f"Creating session {session_id} (default={is_default})")
+        self._logger.info("Creating session %s (default=%s)", session_id, is_default)
 
         # Create queues for IPC
         command_queue: Any = multiprocessing.Queue()
@@ -331,7 +328,7 @@ class SessionManager:
                     name=f"session-init-{session_id}",
                 )
                 init_thread.start()
-                self._logger.info(f"Session {session_id} booting asynchronously")
+                self._logger.info("Session %s booting asynchronously", session_id)
                 return True
 
             return self._finalize_session_start(session)
@@ -339,7 +336,7 @@ class SessionManager:
         except Exception as e:
             session.state = SessionState.ERROR
             session.error_message = str(e)
-            self._logger.error(f"Failed to start worker for session {session_id}: {e}")
+            self._logger.exception("Failed to start worker for session %s", session_id)
             return False
 
     def _complete_async_session_start(self, session: Session) -> None:
@@ -347,7 +344,11 @@ class SessionManager:
         if self._finalize_session_start(session):
             return
         if session.error_message:
-            self._logger.error(f"Session {session.session_id} async init failed: {session.error_message}")
+            self._logger.error(
+                "Session %s async init failed: %s",
+                session.session_id,
+                session.error_message,
+            )
 
     def _finalize_session_start(self, session: Session) -> bool:
         """Consume the worker init result and transition the session state."""
@@ -355,7 +356,7 @@ class SessionManager:
         if result_queue is None:
             session.state = SessionState.ERROR
             session.error_message = "Worker result queue is not initialized"
-            self._logger.error(f"Session {session.session_id} missing result queue")
+            self._logger.error("Session %s missing result queue", session.session_id)
             return False
 
         try:
@@ -363,19 +364,23 @@ class SessionManager:
 
             if init_result.get('status') == 'ready':
                 session.state = SessionState.READY
-                self._logger.info(f"Session {session.session_id} ready")
+                self._logger.info("Session %s ready", session.session_id)
                 return True
 
             session.state = SessionState.ERROR
             session.error_message = init_result.get('error', 'Unknown init error')
-            self._logger.error(f"Session {session.session_id} init failed: {session.error_message}")
+            self._logger.error(
+                "Session %s init failed: %s",
+                session.session_id,
+                session.error_message,
+            )
             self._terminate_worker(session)
             return False
 
         except queue.Empty:
             session.state = SessionState.ERROR
             session.error_message = "Worker initialization timeout"
-            self._logger.error(f"Session {session.session_id} init timeout")
+            self._logger.exception("Session %s init timeout", session.session_id)
             self._terminate_worker(session)
             return False
 
@@ -412,7 +417,7 @@ class SessionManager:
                 if session.process:
                     session.process.join(timeout=5.0)
             except Exception:
-                pass
+                self._logger.exception("Graceful shutdown failed for session %s", session_id)
 
         # Force terminate if still alive
         self._terminate_worker(session)
@@ -423,7 +428,7 @@ class SessionManager:
                 del self._sessions[session_id]
                 session.state = SessionState.DESTROYED
 
-        self._logger.info(f"Session {session_id} destroyed")
+        self._logger.info("Session %s destroyed", session_id)
         return True, ""
 
     def restart_default_session(self) -> dict[str, Any]:
@@ -442,7 +447,7 @@ class SessionManager:
         old_session = None
         old_queues = []
         with self._lock:
-            for _sid, session in self._sessions.items():
+            for session in self._sessions.values():
                 if session.is_default:
                     old_session = session
                     break
@@ -462,7 +467,7 @@ class SessionManager:
             old_queues = [old_session.command_queue, old_session.result_queue]
 
         default_id = old_session.session_id
-        self._logger.info(f"Restarting default session {default_id}")
+        self._logger.info("Restarting default session %s", default_id)
 
         # Gracefully stop the old worker, then force-terminate
         if old_session.command_queue:
@@ -474,7 +479,7 @@ class SessionManager:
                 if old_session.process and old_session.process.is_alive():
                     old_session.process.join(timeout=5.0)
             except Exception:
-                pass
+                self._logger.exception("Graceful restart shutdown failed for session %s", default_id)
         self._terminate_worker(old_session)
 
         # Close old multiprocessing queues to prevent file descriptor leaks
@@ -485,7 +490,7 @@ class SessionManager:
                 q.close()
                 q.join_thread()
             except Exception:
-                pass
+                self._logger.exception("Queue cleanup failed while restarting session %s", default_id)
 
         # Recreate with the same ID — _create_session_internal() overwrites the
         # old entry in self._sessions, so there is no gap where the session is missing.
@@ -496,12 +501,15 @@ class SessionManager:
             try:
                 created = self._create_session_internal(default_id, is_default=True)
             except Exception as e:
-                self._logger.error(f"Exception recreating default session (attempt {attempt + 1}): {e}")
+                self._logger.exception(
+                    "Exception recreating default session (attempt %s)",
+                    attempt + 1,
+                )
                 last_error = str(e)
                 created = False
 
             if created:
-                self._logger.info(f"Default session {default_id} restarted successfully")
+                self._logger.info("Default session %s restarted successfully", default_id)
                 return {"success": True, "error": ""}
 
             # Clean up resources left by the failed attempt before retrying
@@ -517,7 +525,10 @@ class SessionManager:
                                 q.close()
                                 q.join_thread()
                             except Exception:
-                                pass
+                                self._logger.exception(
+                                    "Failed to clean retry queues for session %s",
+                                    default_id,
+                                )
                 time.sleep(1.0)
 
         # Both attempts failed — remove the stale entry
@@ -542,8 +553,8 @@ class SessionManager:
             else:
                 # Reap already-dead process to prevent zombie
                 session.process.join(timeout=1.0)
-        except Exception as e:
-            self._logger.error(f"Error terminating worker: {e}")
+        except Exception:
+            self._logger.exception("Error terminating worker")
 
     def get_session(self, session_id: str | None = None) -> Session | None:
         """
@@ -623,7 +634,7 @@ class SessionManager:
         if not session:
             # Auto-create session on demand if session_id is provided
             if session_id and session_id != self.DEFAULT_SESSION_ID:
-                self._logger.info(f"Auto-creating session: {session_id}")
+                self._logger.info("Auto-creating session: %s", session_id)
                 create_result = self.create_session(session_id)
                 if not create_result.get('success'):
                     return {
@@ -644,7 +655,10 @@ class SessionManager:
 
         # If session is busy, auto-create a new session for parallel execution
         if session.state == SessionState.BUSY:
-            self._logger.info(f"Session {session.session_id} is busy, creating new session for parallel execution")
+            self._logger.info(
+                "Session %s is busy, creating new session for parallel execution",
+                session.session_id,
+            )
             new_session_id = str(uuid.uuid4())[:8]
             create_result = self.create_session(new_session_id)
             if create_result.get('success'):
@@ -654,7 +668,7 @@ class SessionManager:
                         "status": "error",
                         "error": "Failed to get newly created session"
                     }
-                self._logger.info(f"Using new session {new_session_id} for parallel execution")
+                self._logger.info("Using new session %s for parallel execution", new_session_id)
             else:
                 return {
                     "status": "error",
@@ -701,7 +715,7 @@ class SessionManager:
         if not session:
             # Auto-create session on demand if session_id is provided
             if session_id and session_id != self.DEFAULT_SESSION_ID:
-                self._logger.info(f"Auto-creating session: {session_id}")
+                self._logger.info("Auto-creating session: %s", session_id)
                 create_result = self.create_session(session_id)
                 if not create_result.get('success'):
                     return {
@@ -722,7 +736,10 @@ class SessionManager:
 
         # If session is busy, auto-create a new session for parallel execution
         if session.state == SessionState.BUSY:
-            self._logger.info(f"Session {session.session_id} is busy, creating new session for parallel file execution")
+            self._logger.info(
+                "Session %s is busy, creating new session for parallel file execution",
+                session.session_id,
+            )
             new_session_id = str(uuid.uuid4())[:8]
             create_result = self.create_session(new_session_id)
             if create_result.get('success'):
@@ -732,7 +749,10 @@ class SessionManager:
                         "status": "error",
                         "error": "Failed to get newly created session"
                     }
-                self._logger.info(f"Using new session {new_session_id} for parallel file execution")
+                self._logger.info(
+                    "Using new session %s for parallel file execution",
+                    new_session_id,
+                )
             else:
                 return {
                     "status": "error",
@@ -791,7 +811,10 @@ class SessionManager:
             }
 
         if session.state == SessionState.BUSY:
-            self._logger.info(f"Session {session.session_id} is busy, creating new session for parallel data retrieval")
+            self._logger.info(
+                "Session %s is busy, creating new session for parallel data retrieval",
+                session.session_id,
+            )
             new_session_id = str(uuid.uuid4())[:8]
             create_result = self.create_session(new_session_id)
             if create_result.get('success'):
@@ -888,7 +911,11 @@ class SessionManager:
         # The stop_event approach works even if session state hasn't been updated yet
         if session.stop_event is not None:
             session.stop_event.set()
-            self._logger.info(f"Stop event set for session {session.session_id} (was_busy={was_busy})")
+            self._logger.info(
+                "Stop event set for session %s (was_busy=%s)",
+                session.session_id,
+                was_busy,
+            )
             return {"status": "stop_sent", "message": "Stop signal sent via event"}
 
         # Only check BUSY state for queue-based fallback
@@ -946,7 +973,13 @@ class SessionManager:
             command_queue = session.command_queue
             result_queue = session.result_queue
             if command_queue is None or result_queue is None:
-                raise RuntimeError(f"Session {session.session_id} IPC queues are not initialized")
+                session.state = SessionState.ERROR
+                session.error_message = "Session IPC queues are not initialized"
+                return {
+                    "status": "error",
+                    "error": session.error_message,
+                    "session_id": session.session_id,
+                }
 
             # Send command
             command_queue.put({
@@ -1004,19 +1037,24 @@ class SessionManager:
                         if candidate_id == command_id:
                             result = candidate
                             break
-                        else:
-                            # Discard results from stop signals or previous commands
-                            self._logger.debug(
-                                f"Discarding stale result with command_id={candidate_id} "
-                                f"(expected {command_id})"
-                            )
-                            continue
+
+                        # Discard results from stop signals or previous commands
+                        self._logger.debug(
+                            "Discarding stale result with command_id=%s (expected %s)",
+                            candidate_id,
+                            command_id,
+                        )
+                        continue
                     except queue.Empty:
                         # No result yet, keep waiting until deadline
                         continue
 
                 if result is None:
-                    raise queue.Empty()
+                    return {
+                        "status": "timeout",
+                        "error": f"Command timeout after {timeout}s",
+                        "session_id": session.session_id,
+                    }
 
                 # Update session state
                 with self._lock:
@@ -1048,7 +1086,7 @@ class SessionManager:
                     "session_id": session.session_id
                 }
 
-        except Exception as e:
+        except RuntimeError as e:
             with self._lock:
                 session.state = SessionState.ERROR
                 session.error_message = str(e)
@@ -1065,8 +1103,8 @@ class SessionManager:
             try:
                 self._check_sessions()
                 time.sleep(60)  # Check every minute
-            except Exception as e:
-                self._logger.error(f"Cleanup loop error: {e}")
+            except Exception:
+                self._logger.exception("Cleanup loop error")
 
     def _check_sessions(self):
         """Check session health and cleanup idle sessions"""
@@ -1083,16 +1121,19 @@ class SessionManager:
             # Check for idle timeout
             if (session.state == SessionState.READY and
                 current_time - session.last_activity > self.session_timeout):
-                self._logger.info(f"Session {session_id} idle timeout, destroying")
+                self._logger.info("Session %s idle timeout, destroying", session_id)
                 self.destroy_session(session_id)
                 continue
 
             # Check worker health
-            if session.process and not session.process.is_alive():
-                if session.state not in (SessionState.DESTROYED, SessionState.DESTROYING):
-                    self._logger.warning(f"Session {session_id} worker died unexpectedly")
-                    session.state = SessionState.ERROR
-                    session.error_message = "Worker process died"
+            if (
+                session.process
+                and not session.process.is_alive()
+                and session.state not in (SessionState.DESTROYED, SessionState.DESTROYING)
+            ):
+                self._logger.warning("Session %s worker died unexpectedly", session_id)
+                session.state = SessionState.ERROR
+                session.error_message = "Worker process died"
 
     @property
     def available_slots(self) -> int:

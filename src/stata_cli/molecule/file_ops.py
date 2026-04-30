@@ -16,8 +16,7 @@ from ..atom.session_identity import command_session_id, presented_session_id
 def _graphs_from_result(result: dict) -> list[GraphArtifact]:
     graphs: list[GraphArtifact] = []
     extra = result.get("extra", {}) or {}
-    for graph in extra.get("graphs", []) or []:
-        graphs.append(GraphArtifact(**graph))
+    graphs = [GraphArtifact(**graph) for graph in extra.get("graphs", []) or []]
     return graphs
 
 

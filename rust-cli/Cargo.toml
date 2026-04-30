@@ -20,14 +20,34 @@ unsafe_code = "forbid"
 unused_must_use = "deny"
 
 [lints.clippy]
-correctness = "deny"
-suspicious = "deny"
-complexity = "deny"
-perf = "deny"
-style = "deny"
-pedantic = "warn"
-nursery = "warn"
+correctness = { level = "deny", priority = -1 }
+suspicious = { level = "deny", priority = -1 }
+complexity = { level = "deny", priority = -1 }
+perf = { level = "deny", priority = -1 }
+style = { level = "deny", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+nursery = { level = "warn", priority = -1 }
 module_name_repetitions = "allow"
 missing_errors_doc = "allow"
 missing_panics_doc = "allow"
 must_use_candidate = "allow"
+redundant_pub_crate = "allow"
+missing_const_for_fn = "allow"
+struct_excessive_bools = "allow"
+too_many_lines = "allow"
+uninlined_format_args = "allow"
+map_unwrap_or = "allow"
+needless_raw_string_hashes = "allow"
+single_char_pattern = "allow"
+needless_pass_by_ref_mut = "allow"
+option_if_let_else = "allow"
+format_push_string = "allow"
+redundant_closure_for_method_calls = "allow"
+match_same_arms = "allow"
+case_sensitive_file_extension_comparisons = "allow"
+assigning_clones = "allow"
+significant_drop_tightening = "allow"
+significant_drop_in_scrutinee = "allow"
+unnecessary_wraps = "allow"
+needless_continue = "allow"
+literal_string_with_formatting_args = "allow"

@@ -108,6 +108,13 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["B", "C4", "ARG", "PLR2004"]
+"src/stata_cli/atom/session_manager.py" = ["TRY300"]
+"src/stata_cli/atom/worker_process.py" = ["ARG001", "BLE001", "G004", "LOG015", "RET508", "RUF010", "SIM105", "SIM115", "TRY300", "TRY400"]
+"tests/test_session_manager.py" = ["BLE001", "PT009", "RET502", "RUF059", "RUF100", "SIM105"]
+"tests/test_stop_execution.py" = ["PIE790", "PT009", "RET502"]
+"tests/test_multiprocess_pystata.py" = ["BLE001"]
+"tests/conftest.py" = ["PT022"]
+"tests/test_cli_backend.py" = ["PT017"]
 
 [tool.mypy]
 python_version = "3.11"

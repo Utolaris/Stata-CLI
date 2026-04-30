@@ -7,6 +7,8 @@ import logging
 import os
 import platform
 
+logger = logging.getLogger(__name__)
+
 
 def _join_stata_line_continuations(code: str) -> str:
     raw_lines = code.splitlines()
@@ -61,7 +63,7 @@ def resolve_do_file_path(file_path: str) -> tuple[str | None, list[str]]:
 
     if platform.system() == "Windows" and "/" in normalized_path:
         normalized_path = normalized_path.replace("/", "\\")
-        logging.info("Converted path for Windows: %s", normalized_path)
+        logger.info("Converted path for Windows: %s", normalized_path)
 
     candidates: list[str] = []
     tried_paths: list[str] = []

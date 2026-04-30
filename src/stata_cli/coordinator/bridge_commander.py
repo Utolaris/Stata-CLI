@@ -47,7 +47,7 @@ def _list_variables(session_id: str | None) -> list[str]:
         if not _wait_for_bridge_session(session_id):
             return []
         result = manager.get_data(session_id=session_id, max_rows=1, timeout=5.0)
-    except Exception:
+    except RuntimeError:
         return []
     if result.get("status") != "success":
         return []
@@ -63,7 +63,7 @@ def _parse_macro_names(output: str) -> list[str]:
     names: list[str] = []
     for raw_line in output.replace("\r\n", "\n").replace("\r", "\n").split("\n"):
         line = raw_line.strip()
-        if not line or line.startswith(". ") or line.startswith("> "):
+        if not line or line.startswith((". ", "> ")):
             continue
         if _MACRO_SECTION_PATTERN.match(line):
             continue
@@ -80,7 +80,7 @@ def _list_macros(session_id: str | None) -> list[str]:
         if not _wait_for_bridge_session(session_id):
             return []
         result = manager.execute("macro dir", session_id=session_id, timeout=5.0)
-    except Exception:
+    except RuntimeError:
         return []
     if result.get("status") != "success":
         return []

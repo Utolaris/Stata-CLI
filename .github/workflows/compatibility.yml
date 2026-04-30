@@ -64,10 +64,20 @@ jobs:
         shell: pwsh
         run: uv run pytest -q
 
+      - name: Run Ruff checks (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: uv run ruff check .
+
       - name: Run Python compatibility tests (macOS zsh)
         if: runner.os == 'macOS'
         shell: zsh {0}
         run: uv run pytest -q
+
+      - name: Run Ruff checks (macOS zsh)
+        if: runner.os == 'macOS'
+        shell: zsh {0}
+        run: uv run ruff check .
 
       - name: Run backend CLI smoke test (Windows)
         if: runner.os == 'Windows'
@@ -162,10 +172,20 @@ jobs:
         shell: pwsh
         run: cargo test --manifest-path rust-cli/Cargo.toml
 
+      - name: Run Clippy (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: cargo clippy --manifest-path rust-cli/Cargo.toml --all-targets -- -D warnings
+
       - name: Run Rust tests (macOS zsh)
         if: runner.os == 'macOS'
         shell: zsh {0}
         run: cargo test --manifest-path rust-cli/Cargo.toml
+
+      - name: Run Clippy (macOS zsh)
+        if: runner.os == 'macOS'
+        shell: zsh {0}
+        run: cargo clippy --manifest-path rust-cli/Cargo.toml --all-targets -- -D warnings
 
       - name: Build native Rust CLI release binary (Windows)
         if: runner.os == 'Windows'

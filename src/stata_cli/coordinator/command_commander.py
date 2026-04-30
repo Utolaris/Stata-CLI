@@ -13,13 +13,13 @@ from pathlib import Path
 from typing import Any
 
 from ..atom.contracts import ExecutionResult, PartialFailure
+from ..atom.pathing import resolve_path_for_working_dir
 from ..coordinator.bridge_commander import bridge_command, mock_bridge_command
 from ..coordinator.runtime_commander import (
     build_runtime_config,
     initialize_runtime,
     shutdown_runtime,
 )
-from ..atom.pathing import resolve_path_for_working_dir
 from ..molecule.data_ops import data_export_csv_command, data_view_command
 from ..molecule.file_ops import run_file_command
 from ..molecule.selection_ops import default_presented_session, render_error, run_selection_command
@@ -226,7 +226,7 @@ def main(argv: list[str] | None = None) -> int:
             return emit_json_payload(payload)
         print_human_payload(payload)
         return payload_exit_code(payload)
-    except Exception as exc:
+    except RuntimeError as exc:
         error_result = render_error(str(exc))
         if args.json:
             return _emit_json(error_result)

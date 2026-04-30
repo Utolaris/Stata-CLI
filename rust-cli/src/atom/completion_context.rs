@@ -35,7 +35,7 @@ pub(crate) fn completion_context(line: &str, pos: usize) -> CompletionContext {
     let trimmed_before = before_prefix.trim_end();
     let previous_non_space = trimmed_before.chars().last();
 
-    let kind = if matches!(previous_non_space, Some('$') | Some('`')) {
+    let kind = if matches!(previous_non_space, Some('$' | '`')) {
         CompletionContextKind::Macro
     } else if matches!(previous_non_space, Some('(')) {
         CompletionContextKind::Function

@@ -26,12 +26,7 @@ ERROR_MESSAGE_PATTERN = re.compile(
 
 def _is_wrapper_command(command: str) -> bool:
     lowered = command.strip().lower()
-    return (
-        lowered.startswith("capture log close")
-        or lowered.startswith("log using ")
-        or lowered.startswith("set seed ")
-        or lowered.startswith("cd ")
-    )
+    return lowered.startswith(("capture log close", "log using ", "set seed ", "cd "))
 
 
 def _clean_message(lines: list[str]) -> str:

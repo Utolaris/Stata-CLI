@@ -90,7 +90,8 @@ def find_stata_executable_path(
             "se": ["StataSE-64.exe", "StataSE.exe"],
             "be": ["Stata-64.exe", "Stata.exe"],
         }
-        exe_names = edition_execs.get(edition_lower, []) + [
+        exe_names = [
+            *edition_execs.get(edition_lower, []),
             "StataMP-64.exe",
             "StataMP.exe",
             "StataSE-64.exe",
@@ -105,11 +106,12 @@ def find_stata_executable_path(
         return None
 
     if system_name == "Darwin":
-        executable_names = {
-            "mp": ["StataMP", "stata-mp"],
-            "se": ["StataSE", "stata-se"],
-            "be": ["Stata", "stata"],
-        }.get(edition_lower, []) + [
+        executable_names = [
+            *{
+                "mp": ["StataMP", "stata-mp"],
+                "se": ["StataSE", "stata-se"],
+                "be": ["Stata", "stata"],
+            }.get(edition_lower, []),
             "StataMP",
             "StataSE",
             "Stata",
@@ -206,7 +208,7 @@ def get_stata_executable_name(edition: str = "mp") -> str:
         }
         return edition_map.get(edition, "StataMP-64.exe")
 
-    elif is_macos():
+    if is_macos():
         edition_map = {
             "mp": "stata-mp",
             "se": "stata-se",
@@ -214,13 +216,12 @@ def get_stata_executable_name(edition: str = "mp") -> str:
         }
         return edition_map.get(edition, "stata-mp")
 
-    else:  # Linux
-        edition_map = {
-            "mp": "stata-mp",
-            "se": "stata-se",
-            "be": "stata",
-        }
-        return edition_map.get(edition, "stata-mp")
+    edition_map = {
+        "mp": "stata-mp",
+        "se": "stata-se",
+        "be": "stata",
+    }
+    return edition_map.get(edition, "stata-mp")
 
 
 def quote_path_for_stata(path: str) -> str:
@@ -257,9 +258,10 @@ def ensure_directory_exists(path: str) -> bool:
     """
     try:
         os.makedirs(path, exist_ok=True)
-        return True
-    except Exception:
+    except OSError:
         return False
+    else:
+        return True
 
 
 # Platform-specific constants

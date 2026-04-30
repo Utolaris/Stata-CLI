@@ -19,6 +19,8 @@ import re
 import tempfile
 import time
 
+logger = logging.getLogger(__name__)
+
 
 def deduplicate_break_messages(output: str) -> str:
     """Remove duplicate --Break-- messages from Stata output.
@@ -321,7 +323,7 @@ def check_token_limit_and_save(
     output: str,
     max_output_tokens: int,
     extension_path: str | None = None,
-    original_log_path: str | None = None
+    _original_log_path: str | None = None,
 ) -> tuple[str, bool]:
     """Check if output exceeds token limit and save to file if needed.
 
@@ -364,7 +366,7 @@ def check_token_limit_and_save(
                 os.unlink(test_file)
                 logs_dir = candidate
             except OSError:
-                logging.debug(f"Cannot use extension logs dir: {candidate}")
+                logger.debug("Cannot use extension logs dir: %s", candidate)
 
         # Fall back to temp directory
         if not logs_dir:
@@ -374,7 +376,7 @@ def check_token_limit_and_save(
                 os.makedirs(candidate, exist_ok=True)
                 logs_dir = candidate
             except OSError:
-                logging.debug(f"Cannot use temp logs dir: {candidate}")
+                logger.debug("Cannot use temp logs dir: %s", candidate)
 
         # Last resort: current directory
         if not logs_dir:
@@ -407,15 +409,19 @@ def check_token_limit_and_save(
                 preview += "\n... [truncated]"
             message += f"\n\n--- Preview ---\n{preview}"
 
-        logging.info(f"Output exceeded token limit ({actual_tokens} tokens). Saved to: {log_path}")
-        return message, True
-
-    except Exception as e:
-        logging.error(f"Failed to save large output to file: {e}")
+        logger.info(
+            "Output exceeded token limit (%s tokens). Saved to: %s",
+            actual_tokens,
+            log_path,
+        )
+    except OSError:
+        logger.exception("Failed to save large output to file")
         # Fall back to truncating inline
         max_chars = max_output_tokens * 4
         truncated = output[:max_chars] + f"\n\n... [Output truncated at {max_output_tokens} tokens]"
         return truncated, True
+
+    return message, True
 
 
 def process_output(
@@ -454,7 +460,7 @@ def process_output(
         output,
         max_output_tokens,
         extension_path,
-        log_path
+        log_path,
     )
 
     return output
