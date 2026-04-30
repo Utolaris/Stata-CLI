@@ -495,12 +495,12 @@ end
 // profstats.pkg
 v 3
 d profstats - Professional descriptive statistics
-d Author: Your Name
+d Author: Utolaris
 f profstats.ado
 f profstats.sthlp
 
 // stata.toc
 v 3
-d Materials by Your Name
+d Materials by Utolaris
 p profstats Professional descriptive statistics
 ```

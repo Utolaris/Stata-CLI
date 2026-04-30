@@ -134,7 +134,7 @@ quietly {
 ```stata
 /*******************************************************************************
 MASTER DO-FILE: Project Title
-Author: Your Name | Date: 2025-11-23
+Author: Utolaris | Date: 2025-11-23
 Description: Runs the complete analysis pipeline.
 Requires: Stata 17+, estout, outreg2, reghdfe
 *******************************************************************************/
@@ -307,7 +307,7 @@ echo "!data/final/lookup_table.dta" >> .gitignore
 /*******************************************************************************
 PROJECT: Analysis of Income Determinants
 FILE:    04_analysis.do
-AUTHOR:  Your Name
+AUTHOR:  Utolaris
 CREATED: 2025-01-15 | UPDATED: 2025-11-23
 
 VERSION HISTORY:

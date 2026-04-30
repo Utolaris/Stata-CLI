@@ -908,7 +908,7 @@ end
 * mypackage.pkg
 v 3
 d mypackage - Custom analysis package
-d Author: Your Name
+d Author: Utolaris
 f mypackage.ado
 f mypackage.sthlp
 

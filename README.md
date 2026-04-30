@@ -1,5 +1,7 @@
 # stata-cli
 
+中文说明请见 [README.zh.md](/Users/utolaris/Documents/ai/stata-cli/README.zh.md).
+
 `stata-cli` is a local command-line tool for running Stata code, `.do` files, and `.dta` data through the Python/PyStata backend in this repository.
 
 This repo is designed so an AI agent can quickly understand the project, install the right dependencies, bootstrap an analysis workspace, and run Stata locally without needing VS Code.
