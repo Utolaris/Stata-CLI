@@ -447,7 +447,9 @@ fn init_command_warns_when_directory_is_already_in_git_repo() {
     assert_same_path(&json["target_dir"], &resolved_target);
     let agents_text = fs::read_to_string(target.join("AGENTS.md")).unwrap();
     assert!(agents_text.contains("Keep main Stata analysis in `do/analysis.do`."));
-    assert!(agents_text.contains("If you need guidance related to one of those GUI-only commands"));
+    assert!(agents_text.contains(
+        "Do not use Stata GUI-only commands in `.do` files or CLI snippets"
+    ));
     assert!(
         String::from_utf8_lossy(&output.stderr).contains("already inside a Git repository"),
         "stderr: {}",
