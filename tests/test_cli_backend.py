@@ -109,6 +109,26 @@ def test_run_selection_command_redirects_help_topics_to_skill_guidance(monkeypat
     assert manager.executed is False
 
 
+def test_run_selection_command_redirects_wrapped_help_topics_to_skill_guidance(monkeypatch):
+    class DummyManager:
+        def __init__(self):
+            self.executed = False
+
+        def execute(self, code, session_id=None, timeout=None):
+            self.executed = True
+            return {"status": "success", "output": "unexpected", "session_id": session_id or "default"}
+
+    manager = DummyManager()
+    monkeypatch.setattr(selection_ops, "get_runtime_state", lambda: DummyState(manager, multi_session=False))
+
+    result = backend.run_selection_command("capture noisily help regress", None, None)
+
+    assert result.status == "success"
+    assert "help regress" in result.output
+    assert "skills/stata-cli/SKILL.md" in result.output
+    assert manager.executed is False
+
+
 def test_run_selection_command_blocks_gui_only_stata_prefixes(monkeypatch):
     class DummyManager:
         def __init__(self):
@@ -135,7 +155,34 @@ def test_run_selection_command_blocks_gui_only_stata_prefixes(monkeypatch):
         result = backend.run_selection_command(command, None, None)
 
         assert result.status == "error"
-        assert result.error == "This command opens a Stata GUI dialog and is not suitable for CLI execution."
+        assert result.error == "This command opens an interactive Stata UI or waits for input and is not suitable for CLI execution."
+        assert manager.executed is False
+
+
+def test_run_selection_command_blocks_wrapped_or_multiline_interactive_prefixes(monkeypatch):
+    class DummyManager:
+        def __init__(self):
+            self.executed = False
+
+        def execute(self, code, session_id=None, timeout=None):
+            self.executed = True
+            return {"status": "success", "output": "unexpected", "session_id": session_id or "default"}
+
+    blocked_commands = [
+        "capture browse",
+        "quietly: window manage forward results",
+        "sysuse auto, clear\ncapture browse",
+        "pause on\npause",
+    ]
+
+    for command in blocked_commands:
+        manager = DummyManager()
+        monkeypatch.setattr(selection_ops, "get_runtime_state", lambda manager=manager: DummyState(manager, multi_session=False))
+
+        result = backend.run_selection_command(command, None, None)
+
+        assert result.status == "error"
+        assert "not suitable for CLI execution" in result.error
         assert manager.executed is False
 
 

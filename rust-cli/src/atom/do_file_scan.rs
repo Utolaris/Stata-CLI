@@ -10,8 +10,8 @@ pub(crate) struct GuiCommandHit {
     pub(crate) command: String,
 }
 
-const BLOCKED_COMMANDS: [&str; 7] = [
-    "browse", "edit", "db", "dialog", "window", "shell", "winexec",
+const BLOCKED_COMMANDS: [&str; 8] = [
+    "browse", "edit", "db", "dialog", "window", "shell", "winexec", "pause",
 ];
 const WRAPPER_PREFIXES: [&str; 8] = [
     "capture",
@@ -160,7 +160,7 @@ fn confirm_gui_command_execution_with_io<R: BufRead, W: Write>(
         .join(", ");
     writeln!(
         writer,
-        "Warning: {} contains GUI-only Stata commands on line(s): {}.",
+        "Warning: {} contains interactive Stata commands on line(s): {}.",
         path.display(),
         hits.iter()
             .map(|hit| hit.line_number.to_string())
@@ -170,7 +170,7 @@ fn confirm_gui_command_execution_with_io<R: BufRead, W: Write>(
     writeln!(writer, "Detected command prefix(es): {commands}")?;
     writeln!(
         writer,
-        "This command opens a Stata GUI dialog and is not suitable for CLI execution."
+        "This command opens an interactive Stata UI or waits for input and is not suitable for CLI execution."
     )?;
     write!(writer, "Continue anyway? [y/n]: ")?;
     writer.flush()?;
@@ -212,10 +212,11 @@ mod tests {
     #[test]
     fn detects_wrapped_gui_commands() {
         let hits = scan_do_source_for_gui_commands(
-            "capture browse\nquietly window manage forward results\n",
+            "capture browse\nquietly window manage forward results\npause on\npause\n",
         );
         assert_eq!(hits[0].command, "browse");
         assert_eq!(hits[1].command, "window");
+        assert_eq!(hits[2].command, "pause");
     }
 
     #[test]
@@ -257,7 +258,7 @@ local note "window"
         .unwrap();
         assert!(confirmed);
         let rendered = String::from_utf8(output).unwrap();
-        assert!(rendered.contains("This command opens a Stata GUI dialog"));
+        assert!(rendered.contains("This command opens an interactive Stata UI"));
     }
 
     #[test]
