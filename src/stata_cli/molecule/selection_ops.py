@@ -46,10 +46,10 @@ def run_selection_command(
     manager = state.active_session_manager()
 
     runtime_session_id = command_session_id(session_id, config)
-    blocked_gui_prefix = _blocked_gui_prefix(selection)
-    if blocked_gui_prefix is not None:
+    blocked_interactive_prefix = _blocked_interactive_prefix(selection)
+    if blocked_interactive_prefix is not None:
         return render_error(
-            "This command opens a Stata GUI dialog and is not suitable for CLI execution.",
+            "This command opens an interactive Stata UI or waits for input and is not suitable for CLI execution.",
             session_id=presented_session_id(session_id, runtime_session_id, config),
         )
     boot_error = _wait_for_booting_session(manager, runtime_session_id)
@@ -108,20 +108,15 @@ def default_presented_session(session_id: str | None) -> str:
 
 
 def _help_topic_guidance(selection: str) -> str | None:
-    normalized = selection.strip()
-    if not normalized:
+    parsed = _single_parsed_command(selection)
+    if parsed is None:
         return None
 
-    lines = [line.strip() for line in normalized.splitlines() if line.strip()]
-    if len(lines) != 1:
+    command, args = parsed
+    if command != "help":
         return None
 
-    line = lines[0]
-    if not line.lower().startswith("help"):
-        return None
-
-    parts = line.split(None, 1)
-    topic = parts[1].strip() if len(parts) > 1 else ""
+    topic = " ".join(args).strip()
     if not topic:
         return None
 
@@ -157,17 +152,52 @@ def _skill_doc_for_help_topic(topic: str) -> str | None:
     return "skills/stata-cli/SKILL.md"
 
 
-def _blocked_gui_prefix(selection: str) -> str | None:
-    normalized = selection.strip()
-    if not normalized:
-        return None
-
-    lines = [line.strip() for line in normalized.splitlines() if line.strip()]
-    if len(lines) != 1:
-        return None
-
-    first_token = lines[0].split(None, 1)[0].lower()
-    blocked = {"browse", "edit", "db", "dialog", "window", "shell", "winexec"}
-    if first_token in blocked:
-        return first_token
+def _blocked_interactive_prefix(selection: str) -> str | None:
+    blocked = {"browse", "edit", "db", "dialog", "window", "shell", "winexec", "pause"}
+    for raw_line in selection.splitlines():
+        parsed = _parse_stata_command_line(raw_line)
+        if parsed is None:
+            continue
+        command, _args = parsed
+        if command in blocked:
+            return command
     return None
+
+
+def _single_parsed_command(selection: str) -> tuple[str, list[str]] | None:
+    parsed_lines = [
+        parsed
+        for raw_line in selection.splitlines()
+        if (parsed := _parse_stata_command_line(raw_line)) is not None
+    ]
+    if len(parsed_lines) != 1:
+        return None
+    return parsed_lines[0]
+
+
+def _parse_stata_command_line(line: str) -> tuple[str, list[str]] | None:
+    stripped = line.strip()
+    if not stripped or stripped.startswith(("*", "//")):
+        return None
+
+    tokens = [_normalize_token(token) for token in stripped.split()]
+    tokens = [token for token in tokens if token]
+    wrappers = {
+        "capture",
+        "cap",
+        "quietly",
+        "qui",
+        "noisily",
+        "noi",
+        "capturely",
+        "captureily",
+    }
+    while tokens and tokens[0] in wrappers:
+        tokens.pop(0)
+    if not tokens:
+        return None
+    return tokens[0], tokens[1:]
+
+
+def _normalize_token(token: str) -> str:
+    return token.strip(":,;()").lower()

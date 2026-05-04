@@ -111,6 +111,41 @@ def is_test_mode() -> bool:
     return os.getenv(TEST_MODE_ENV, "").strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _contract_echo_from_args(args: argparse.Namespace) -> dict[str, Any]:
+    return {
+        "command": args.command,
+        "data_command": getattr(args, "data_command", None),
+        "file_path": getattr(args, "file_path", None),
+        "code": getattr(args, "code", None),
+        "session_id": getattr(args, "session_id", None),
+        "working_dir": getattr(args, "working_dir", None),
+        "stata_path": args.stata_path,
+        "stata_edition": args.stata_edition,
+        "log_level": args.log_level,
+        "result_display_mode": args.result_display_mode,
+        "max_output_tokens": args.max_output_tokens,
+        "multi_session": args.multi_session,
+        "max_sessions": args.max_sessions,
+        "session_timeout": args.session_timeout,
+        "json": args.json,
+        "raw_output": args.raw_output,
+        "if_condition": getattr(args, "if_condition", None),
+        "max_rows": getattr(args, "max_rows", None),
+        "input_dta": getattr(args, "input_dta", None),
+        "output": getattr(args, "output", None),
+        "replace": getattr(args, "replace", None),
+    }
+
+
+def _should_echo_contract_args() -> bool:
+    return os.getenv("STATA_CLI_BACKEND_TEST_ECHO_ARGS", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+
+
 def mock_result_from_args(args: argparse.Namespace) -> ExecutionResult | dict[str, Any]:
     sleep_ms = int(os.getenv("STATA_CLI_BACKEND_TEST_SLEEP_MS", "0") or "0")
     if sleep_ms > 0:
@@ -119,6 +154,18 @@ def mock_result_from_args(args: argparse.Namespace) -> ExecutionResult | dict[st
     session_id = getattr(args, "session_id", None)
     presented_session_id = default_presented_session(session_id)
     working_dir = getattr(args, "working_dir", None) or ""
+    if _should_echo_contract_args():
+        echoed = json.dumps(_contract_echo_from_args(args), sort_keys=True)
+        if args.command in {"run", "file"}:
+            return ExecutionResult(
+                status="success",
+                output=echoed,
+                session_id=presented_session_id,
+                log_file=None,
+                graphs=[],
+                error=None,
+            )
+        return {"status": "success", "contract": json.loads(echoed)}
 
     if args.command == "run":
         return ExecutionResult(

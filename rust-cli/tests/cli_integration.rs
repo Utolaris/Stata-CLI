@@ -97,6 +97,16 @@ fn assert_same_path(actual: &Value, expected: &Path) {
     );
 }
 
+fn contract_echo(output: &std::process::Output) -> Value {
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let json: Value = serde_json::from_slice(&output.stdout).unwrap();
+    serde_json::from_str(json["output"].as_str().unwrap()).unwrap()
+}
+
 #[test]
 fn run_command_round_trips_through_python_backend() {
     let temp = tempdir().unwrap();
@@ -125,6 +135,110 @@ fn run_command_round_trips_through_python_backend() {
     assert!(rendered_output.contains("display 1+1"));
     assert!(rendered_output.contains(temp.path().to_string_lossy().as_ref()));
     assert!(!rendered_output.contains("timeout="));
+}
+
+#[test]
+fn run_command_contract_passes_global_and_session_args_to_python_backend() {
+    let temp = tempdir().unwrap();
+    let output = base_command()
+        .env("STATA_CLI_BACKEND_TEST_ECHO_ARGS", "1")
+        .arg("--stata-edition")
+        .arg("se")
+        .arg("--log-level")
+        .arg("DEBUG")
+        .arg("--result-display-mode")
+        .arg("full")
+        .arg("--max-output-tokens")
+        .arg("321")
+        .arg("--multi-session")
+        .arg("--max-sessions")
+        .arg("7")
+        .arg("--session-timeout")
+        .arg("42")
+        .arg("--session-id")
+        .arg("rust-contract")
+        .arg("--working-dir")
+        .arg(temp.path())
+        .arg("run")
+        .arg("--code")
+        .arg("display 2+2")
+        .output()
+        .unwrap();
+
+    let echoed = contract_echo(&output);
+    assert_eq!(echoed["command"], "run");
+    assert_eq!(echoed["code"], "display 2+2");
+    assert_eq!(echoed["session_id"], "rust-contract");
+    assert_eq!(
+        echoed["working_dir"],
+        temp.path().to_string_lossy().as_ref()
+    );
+    assert_eq!(echoed["stata_edition"], "se");
+    assert_eq!(echoed["log_level"], "DEBUG");
+    assert_eq!(echoed["result_display_mode"], "full");
+    assert_eq!(echoed["max_output_tokens"], 321);
+    assert_eq!(echoed["multi_session"], true);
+    assert_eq!(echoed["max_sessions"], 7);
+    assert_eq!(echoed["session_timeout"], 42);
+    assert_eq!(echoed["json"], true);
+    assert_eq!(echoed["raw_output"], true);
+}
+
+#[test]
+fn file_command_contract_absolutizes_paths_before_python_backend() {
+    let temp = tempdir().unwrap();
+    let do_file = temp.path().join("contract.do");
+    fs::write(&do_file, "display 1+1\n").unwrap();
+
+    let output = base_command()
+        .env("STATA_CLI_BACKEND_TEST_ECHO_ARGS", "1")
+        .arg("file")
+        .arg(&do_file)
+        .arg("--working-dir")
+        .arg(temp.path())
+        .arg("--session-id")
+        .arg("file-contract")
+        .output()
+        .unwrap();
+
+    let echoed = contract_echo(&output);
+    assert_eq!(echoed["command"], "file");
+    assert_same_path(&echoed["file_path"], &do_file);
+    assert_same_path(&echoed["working_dir"], temp.path());
+    assert_eq!(echoed["session_id"], "file-contract");
+}
+
+#[test]
+fn data_view_contract_passes_structured_args_to_python_backend() {
+    let temp = tempdir().unwrap();
+    let dta_path = temp.path().join("sample.dta");
+    fs::write(&dta_path, "mock dta content\n").unwrap();
+
+    let output = base_command()
+        .env("STATA_CLI_BACKEND_TEST_ECHO_ARGS", "1")
+        .arg("data")
+        .arg("view")
+        .arg("--if-condition")
+        .arg("iq > 100")
+        .arg("--max-rows")
+        .arg("25")
+        .arg("--input-dta")
+        .arg(&dta_path)
+        .output()
+        .unwrap();
+
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let json: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let echoed = &json["contract"];
+    assert_eq!(echoed["command"], "data");
+    assert_eq!(echoed["data_command"], "view");
+    assert_eq!(echoed["if_condition"], "iq > 100");
+    assert_eq!(echoed["max_rows"], 25);
+    assert_same_path(&echoed["input_dta"], &dta_path);
 }
 
 #[test]
@@ -252,7 +366,7 @@ fn file_command_prompts_and_continues_when_gui_command_is_confirmed() {
         String::from_utf8_lossy(&output.stderr)
     );
     let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(stderr.contains("This command opens a Stata GUI dialog"));
+    assert!(stderr.contains("This command opens an interactive Stata UI"));
     assert!(stderr.contains("Continue anyway? [y/n]:"));
     let json: Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(json["status"], "success");
@@ -294,7 +408,7 @@ fn file_command_cancels_when_gui_command_is_rejected() {
         String::from_utf8_lossy(&output.stdout)
     );
     let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(stderr.contains("This command opens a Stata GUI dialog"));
+    assert!(stderr.contains("This command opens an interactive Stata UI"));
     assert!(stderr.contains("Execution cancelled by user after GUI command warning"));
 }
 
