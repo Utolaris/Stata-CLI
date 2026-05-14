@@ -79,7 +79,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def _emit_json(result: ExecutionResult) -> int:
-    sys.stdout.write(result.model_dump_json(indent=2))
+    sys.stdout.write(result.model_dump_json(indent=2, ensure_ascii=True))
     sys.stdout.write("\n")
     return 0 if result.status == "success" else 1
 
@@ -94,7 +94,7 @@ def emit_json_payload(payload: object) -> int:
 
 def print_human_payload(payload: object) -> None:
     if isinstance(payload, ExecutionResult):
-        print(payload.model_dump_json(indent=2))
+        print(payload.model_dump_json(indent=2, ensure_ascii=True))
         return
     print(json.dumps(payload, indent=2))
 

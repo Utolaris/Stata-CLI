@@ -138,6 +138,25 @@ fn run_command_round_trips_through_python_backend() {
 }
 
 #[test]
+fn run_command_accepts_non_ascii_backend_json() {
+    let output = base_command()
+        .arg("run")
+        .arg("--code")
+        .arg("display \"北京\"")
+        .output()
+        .unwrap();
+
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let json: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(json["status"], "success");
+    assert!(json["output"].as_str().unwrap().contains("北京"));
+}
+
+#[test]
 fn run_command_contract_passes_global_and_session_args_to_python_backend() {
     let temp = tempdir().unwrap();
     let output = base_command()
@@ -734,6 +753,32 @@ fn data_commands_round_trip_through_python_backend() {
         csv_path.to_string_lossy().as_ref()
     );
     assert!(csv_path.exists());
+}
+
+#[test]
+fn data_view_ignores_global_working_dir() {
+    let temp = tempdir().unwrap();
+    let dta_path = temp.path().join("sample.dta");
+    fs::write(&dta_path, "mock dta content\n").unwrap();
+
+    let view_output = base_command()
+        .arg("--working-dir")
+        .arg(temp.path())
+        .arg("data")
+        .arg("view")
+        .arg("--input-dta")
+        .arg(&dta_path)
+        .output()
+        .unwrap();
+
+    assert!(
+        view_output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&view_output.stderr)
+    );
+    let view_json: Value = serde_json::from_slice(&view_output.stdout).unwrap();
+    assert_eq!(view_json["status"], "success");
+    assert_eq!(view_json["source_dta"], dta_path.to_string_lossy().as_ref());
 }
 
 #[test]

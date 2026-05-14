@@ -16,13 +16,13 @@ from ..molecule.selection_ops import render_error, run_selection_command
 
 
 def _emit(result: ExecutionResult) -> None:
-    sys.stdout.write(result.model_dump_json())
+    sys.stdout.write(result.model_dump_json(ensure_ascii=True))
     sys.stdout.write("\n")
     sys.stdout.flush()
 
 
 def _emit_completion(result: CompletionContextResult) -> None:
-    sys.stdout.write(result.model_dump_json())
+    sys.stdout.write(result.model_dump_json(ensure_ascii=True))
     sys.stdout.write("\n")
     sys.stdout.flush()
 

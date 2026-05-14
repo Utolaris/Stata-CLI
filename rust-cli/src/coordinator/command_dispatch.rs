@@ -91,15 +91,22 @@ pub(crate) fn run() -> Result<()> {
         Commands::Data { command } => {
             let python = resolve_python(effective_cli.python.as_deref(), &repo_root.path)?;
             let (backend_command, backend_args) = data_backend_invocation(command)?;
+            let mut data_cli = effective_cli.clone();
+            if matches!(
+                command,
+                crate::atom::cli_contract::DataCommands::View { .. }
+            ) {
+                data_cli.working_dir = None;
+            }
             let payload = invoke_backend_json(
                 &python.path,
                 &repo_root.path,
-                &effective_cli,
+                &data_cli,
                 backend_command,
                 backend_args,
             )?;
             let payload = prepare_json_payload(
-                &effective_cli,
+                &data_cli,
                 payload,
                 matches!(
                     command,

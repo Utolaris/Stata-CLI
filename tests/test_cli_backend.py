@@ -9,7 +9,7 @@ from pathlib import Path
 import stata_cli_backend as backend
 from stata_cli.atom.runtime_state import RuntimeConfig
 from stata_cli.atom.session_manager import SessionState
-from stata_cli.coordinator import bridge_commander
+from stata_cli.coordinator import bridge_commander, command_commander
 from stata_cli.molecule import data_ops, file_ops, selection_ops
 
 
@@ -525,6 +525,33 @@ def test_build_parser_rejects_removed_timeout_flags():
             assert exc.code == 2
         else:
             raise AssertionError(f"Expected parser failure for argv={argv}")
+
+
+def test_emit_json_payload_escapes_non_ascii_execution_output(monkeypatch):
+    stdout = io.StringIO()
+    monkeypatch.setattr(command_commander.sys, "stdout", stdout)
+
+    exit_code = backend.emit_json_payload(
+        backend.ExecutionResult(status="success", output='display "北京"')
+    )
+
+    rendered = stdout.getvalue()
+    assert exit_code == 0
+    assert "北京" not in rendered
+    assert "\\u5317\\u4eac" in rendered
+    assert json.loads(rendered)["output"] == 'display "北京"'
+
+
+def test_bridge_emit_escapes_non_ascii_execution_output(monkeypatch):
+    stdout = io.StringIO()
+    monkeypatch.setattr(bridge_commander.sys, "stdout", stdout)
+
+    bridge_commander._emit(backend.ExecutionResult(status="success", output="城市"))
+
+    rendered = stdout.getvalue()
+    assert "城市" not in rendered
+    assert "\\u57ce\\u5e02" in rendered
+    assert json.loads(rendered)["output"] == "城市"
 
 
 def test_data_export_csv_command_resolves_relative_output_against_working_dir(monkeypatch, tmp_path):
