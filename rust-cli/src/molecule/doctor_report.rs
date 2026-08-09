@@ -1,7 +1,4 @@
-use crate::atom::json_contract::{
-    format_stata_path_source, DoctorCheck, DoctorReport, PythonResolution, RepoRootResolution,
-    ResolvedStataPath,
-};
+use crate::atom::json_contract::{DoctorCheck, DoctorReport, RepoRootResolution};
 use std::path::Path;
 
 pub(crate) fn repo_root_check(repo_root: &RepoRootResolution) -> DoctorCheck {
@@ -40,51 +37,11 @@ pub(crate) fn config_file_check(config_path: Option<&Path>) -> DoctorCheck {
     }
 }
 
-pub(crate) fn backend_entry_check(backend: &Path) -> DoctorCheck {
-    if backend.exists() {
-        DoctorCheck {
-            name: "backend_script",
-            status: "ok",
-            detail: format!("Found {}", backend.display()),
-        }
-    } else {
-        DoctorCheck {
-            name: "backend_script",
-            status: "error",
-            detail: format!("Missing {}", backend.display()),
-        }
-    }
-}
-
-pub(crate) fn stata_path_check(resolved_stata_path: &ResolvedStataPath) -> DoctorCheck {
-    match (&resolved_stata_path.path, resolved_stata_path.source) {
-        (Some(path), source) => DoctorCheck {
-            name: "stata_path",
-            status: "ok",
-            detail: format!(
-                "{} (source: {})",
-                path.display(),
-                format_stata_path_source(source)
-            ),
-        },
-        _ => DoctorCheck {
-            name: "stata_path",
-            status: "error",
-            detail: "Windows requires a valid Stata installation directory.".to_string(),
-        },
-    }
-}
-
-pub(crate) fn python_ok_check(resolution: &PythonResolution) -> DoctorCheck {
+pub(crate) fn engine_probe_ok_check(detail: String) -> DoctorCheck {
     DoctorCheck {
-        name: "python",
+        name: "engine_probe",
         status: "ok",
-        detail: format!(
-            "{} (source: {}, version: {})",
-            resolution.path.display(),
-            resolution.source,
-            resolution.version
-        ),
+        detail,
     }
 }
 
@@ -93,14 +50,6 @@ pub(crate) fn error_check(name: &'static str, detail: String) -> DoctorCheck {
         name,
         status: "error",
         detail,
-    }
-}
-
-pub(crate) fn backend_probe_ok_check() -> DoctorCheck {
-    DoctorCheck {
-        name: "backend_probe",
-        status: "ok",
-        detail: "Backend successfully executed `display 1+1`.".to_string(),
     }
 }
 

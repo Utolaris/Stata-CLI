@@ -20,28 +20,14 @@ pub(crate) fn default_config_path() -> Option<PathBuf> {
     }
 }
 
-pub(crate) fn backend_entry(repo_root: &Path) -> PathBuf {
-    repo_root
-        .join("src")
-        .join("stata_cli")
-        .join("entry")
-        .join("backend_main.py")
-}
-
 pub(crate) fn boilerplate_dir(repo_root: &Path) -> PathBuf {
     repo_root.join("boilerplate")
 }
 
-pub(crate) fn project_python(repo_root: &Path) -> PathBuf {
-    if cfg!(windows) {
-        repo_root.join(".venv").join("Scripts").join("python.exe")
-    } else {
-        repo_root.join(".venv").join("bin").join("python")
-    }
-}
-
 pub(crate) fn is_repo_root(path: &Path) -> bool {
-    path.join("pyproject.toml").exists() && backend_entry(path).exists()
+    path.join("rust-cli").join("Cargo.toml").exists()
+        && path.join("boilerplate").is_dir()
+        && path.join("bin").is_dir()
 }
 
 pub(crate) fn discover_repo_root_from(start: &Path) -> Option<PathBuf> {

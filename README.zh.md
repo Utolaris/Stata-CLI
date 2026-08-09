@@ -1,6 +1,8 @@
 # stata-cli
 
-`stata-cli` 是一个本地命令行工具，用来通过本仓库里的 Python/PyStata 后端运行 Stata 代码、`.do` 文件和 `.dta` 数据。
+`stata-cli` 是一个本地命令行工具，通过原生 Rust 引擎直接加载 Stata 自带的共享库
+（`libstata-mp.dylib`），调用官方 PyStata 桥使用的同一组 `StataSO_*` C ABI 来运行
+Stata 代码、`.do` 文件和 `.dta` 数据。**不再需要 Python、pystata 或虚拟环境。**
 
 这个仓库的目标是让 AI 代理能快速理解项目、安装依赖、初始化分析工作区，并在本机直接运行 Stata，而不必依赖 VS Code。
 
@@ -18,17 +20,10 @@ C:\Program Files\Stata18
 
 如果 Stata 装在别的位置，可以通过 `--stata-path` 指定，或者在 CLI 配置里设置。
 
-### 2. 准备 Python 后端
+### 2. 把仓库内的 `bin/` 加入 `PATH`
 
-`stata-cli` 依赖仓库内的本地 Python 后端。请使用 Python 3.11，因为 Stata 的 Python bridge 与更高版本不兼容。
-
-```bash
-uv sync --all-extras --python 3.11
-```
-
-### 3. 把仓库内的 `bin/` 加入 `PATH`
-
-这个项目把可执行文件放在仓库根目录下的 `bin/`，因为 CLI 需要和同仓库里的 Python 后端配合工作。
+这个项目把可执行文件放在仓库根目录下的 `bin/`。二进制会从自身位置反推仓库根目录，
+所以把它放在仓库内，就不需要额外做全局安装。
 
 克隆仓库后，请把 `bin/` 目录加入 shell 的 `PATH`：
 
@@ -62,7 +57,7 @@ Copy-Item rust-cli\\target\\x86_64-pc-windows-gnu\\release\\stata-cli.exe bin\\s
 bash ./scripts/build_windows_bin.sh
 ```
 
-### 4. 验证安装
+### 3. 验证安装
 
 ```bash
 stata-cli doctor
@@ -75,7 +70,7 @@ stata-cli doctor
 - 使用 `stata-cli run` 执行内联 Stata 命令
 - 使用 `stata-cli file` 运行 `.do` 文件
 - 使用 `stata-cli data view` 和 `stata-cli data export-csv` 查看和导出 `.dta` 数据
-- 使用 `stata-cli doctor` 诊断本地 Python/Stata 后端
+- 使用 `stata-cli doctor` 诊断本地 Stata 引擎
 - 使用 `stata-cli init` 初始化一个适合 AI 协作的项目骨架
 - 使用 `stata-cli init` 放入工作区的 `skills/stata-cli/` 本地 Stata skill
 - 使用 `stata-cli repl` 打开面向人工交互的独立 REPL
@@ -124,7 +119,7 @@ REPL 是一个单独面向人工的交互界面，带有 Stata 风格提示符�
 stata-cli doctor
 ```
 
-用 `doctor` 确认仓库内的 Rust CLI、Python 后端和 Stata 安装能够正常联通。
+用 `doctor` 确认仓库内的 Rust CLI 能加载 Stata 共享库并执行探针命令。
 
 ### 处理数据
 
@@ -170,10 +165,8 @@ stata-cli data export-csv --input-dta /absolute/path/to/data.dta --output /absol
 ## 常见失败原因
 
 - `stata-cli` 没有安装，或者没有加入 `PATH`
-- 缺少 uv 管理的 Python 3.11 环境
-- 二进制被移出了仓库，导致它找不到 Python 后端
 - 没有安装 Stata 18，或者 `--stata-path` 指向了错误的位置
-- PyStata 或本地 Stata Python bridge 不可用
+- 在 `--stata-path`、`STATA_PATH` 或 macOS 默认路径（`/Applications/StataNow`、`/Applications/Stata`）中找不到 Stata
 - 目标 `.do` 或 `.dta` 文件路径不存在
 
 如果你觉得环境配置有问题，先运行：
@@ -181,6 +174,31 @@ stata-cli data export-csv --input-dta /absolute/path/to/data.dta --output /absol
 ```bash
 stata-cli doctor
 ```
+
+## Unsafe FFI 说明
+
+本项目一般禁止 `unsafe` 代码（`unsafe_code = "warn"`），但有一个经过批准的例外：
+`rust-cli/src/atom/stata_engine.rs` 通过 Stata 共享库导出的 `StataSO_*` C ABI
+在进程内驱动 Stata。Stata 没有官方 Rust API，而进程内桥接是唯一不需要独立进程的
+本地方案（官方 `pystata` 通过 `ctypes` 做同样的事）。
+
+例外被严格限制在该模块内，对外只暴露安全 API：
+
+- `StataEngine::new(stata_home, edition)` —— 加载 `libstata-{mp,se,be}.dylib`
+  并初始化引擎（不传 `-pyexec`，因此不附加任何 Python）。
+- `execute(cmd)` / `run_block(code)` —— 执行单行命令或临时 do-file 块，
+  返回 `(rc, output)`。
+- `set_break()` —— 从监控线程中断正在执行的命令（预留给未来的 stop/timeout 功能）。
+- `shutdown()` —— 注意：它会调用 Stata 的 `_sexit` 并直接终止当前进程，
+  因此只在 REPL 退出时使用。
+
+已知约束与风险：
+
+- 每个 OS 进程只能有一个 Stata 引擎（Stata 使用进程级全局状态），并行会话需要独立进程。
+- `StataSO_Execute` 不可重入，调用已用互斥锁串行化。
+- C 引擎崩溃可能导致整个 CLI 进程退出。
+- `data view` 预览通过临时 `export delimited` CSV 生成，浮点数保留 Stata 默认文本精度
+  （8 位有效数字），与 pandas 的完整 float32 展开略有差异；整数列输出为 JSON 整数。
 
 ## 许可证
 

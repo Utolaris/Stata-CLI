@@ -2,7 +2,7 @@
 
 中文说明请见 [README.zh.md](/Users/utolaris/Documents/ai/stata-cli/README.zh.md).
 
-`stata-cli` is a local command-line tool for running Stata code, `.do` files, and `.dta` data through the Python/PyStata backend in this repository.
+`stata-cli` is a local command-line tool for running Stata code, `.do` files, and `.dta` data through a native Rust engine. It loads Stata's own shared library (`libstata-mp.dylib`) directly and calls the same `StataSO_*` C ABI that the official PyStata bridge uses — no Python interpreter, `pystata`, or virtual environment is required.
 
 This repo is designed so an AI agent can quickly understand the project, install the right dependencies, bootstrap an analysis workspace, and run Stata locally without needing VS Code.
 
@@ -20,17 +20,9 @@ C:\Program Files\Stata18
 
 If Stata is installed somewhere else, pass `--stata-path` or set it in the CLI config.
 
-### 2. Prepare the Python backend
+### 2. Add the repo-local binary directory to `PATH`
 
-`stata-cli` depends on the local Python backend in this repository. Use Python 3.11 because the Stata Python bridge is not compatible with newer runtimes.
-
-```bash
-uv sync --all-extras --python 3.11
-```
-
-### 3. Add the repo-local binary directory to `PATH`
-
-This project ships a repo-local binary under `bin/` because the CLI depends on the Python backend that lives in the same repository.
+This project ships a repo-local binary under `bin/`. The binary resolves the repository root from its own location, so keeping it inside the repo means you do not need a separate global install step.
 
 After cloning the repo, add its `bin/` directory to your shell `PATH`:
 
@@ -64,7 +56,7 @@ If you have Bash available on Windows, you can also run:
 bash ./scripts/build_windows_bin.sh
 ```
 
-### 4. Verify the setup
+### 3. Verify the setup
 
 ```bash
 stata-cli doctor
@@ -77,7 +69,7 @@ stata-cli doctor
 - Run inline Stata commands with `stata-cli run`
 - Execute `.do` files with `stata-cli file`
 - Inspect and export `.dta` data with `stata-cli data view` and `stata-cli data export-csv`
-- Diagnose the local Python/Stata backend with `stata-cli doctor`
+- Diagnose the local Stata engine with `stata-cli doctor`
 - Bootstrap an AI-friendly project scaffold with `stata-cli init`
 - Use the bundled Stata skill that `stata-cli init` places under `skills/stata-cli/` in each workspace
 - Use the standalone `stata-cli repl` for human interactive work, including syntax highlighting and code completion
@@ -126,7 +118,7 @@ The REPL is a separate human-oriented interface with a Stata-style prompt, synta
 stata-cli doctor
 ```
 
-Use `doctor` to confirm that the repo-local Rust CLI, Python backend, and Stata installation can talk to each other.
+Use `doctor` to confirm that the repo-local Rust CLI can load Stata's shared library and execute a probe command.
 
 ### Work with data
 
@@ -172,10 +164,8 @@ stata-cli data export-csv --input-dta /absolute/path/to/data.dta --output /absol
 ## Common failure reasons
 
 - `stata-cli` is not installed or not on `PATH`
-- The uv-managed Python 3.11 environment is missing
-- The binary was moved away from the repository, so it can no longer locate the Python backend
 - Stata 18 is not installed, or `--stata-path` points to the wrong location
-- PyStata or the local Stata Python bridge is unavailable
+- Stata was not found at `--stata-path`, `STATA_PATH`, or the macOS defaults (`/Applications/StataNow`, `/Applications/Stata`)
 - The target `.do` or `.dta` file path does not exist
 
 If setup looks wrong, start with:
@@ -184,10 +174,44 @@ If setup looks wrong, start with:
 stata-cli doctor
 ```
 
+## Unsafe FFI
+
+The Rust crate normally forbids `unsafe` code (`unsafe_code = "warn"` since the
+project no longer uses Python). There is one deliberate exception:
+`rust-cli/src/atom/stata_engine.rs` calls into Stata's shared library through
+its exported `StataSO_*` C ABI. Stata does not ship a Rust API, and the local
+in-process bridge is the only supported way to drive Stata without a separate
+process (the official `pystata` package does the same thing through `ctypes`).
+
+The exception is confined to that one module, which exposes a small safe API:
+
+- `StataEngine::new(stata_home, edition)` – loads
+  `libstata-{mp,se,be}.dylib` and initializes the engine (no `-pyexec`, so no
+  Python is attached).
+- `execute(cmd)` / `run_block(code)` – run one line or a temp-do-file block
+  and return `(rc, output)`.
+- `set_break()` – interrupt a running command from a monitor thread (reserved
+  for a future stop/timeout feature).
+- `shutdown()` – note: this calls Stata's `_sexit` and terminates the current
+  process, so it is only used at REPL exit.
+
+Known constraints and risks:
+
+- One Stata engine per OS process (Stata uses process-wide globals), so
+  parallel sessions must be separate processes.
+- `StataSO_Execute` is not reentrant; calls are serialized with a mutex.
+- A crash inside the C engine can take the whole CLI process down.
+- `data view` previews are produced via a temporary `export delimited` CSV, so
+  floating-point values carry Stata's default text precision (8 significant
+  digits) instead of pandas' full float32 expansion, and integer columns are
+  reported as JSON integers.
+
+## License
+
 ## License
 
 MIT
 
 ## Acknowledgements
 
-This project benefits from prior experimentation in AI-oriented Stata tooling and from the broader PyStata ecosystem.
+This project benefits from prior experimentation in AI-oriented Stata tooling and from reverse-engineering the `StataSO_*` ABI used by the PyStata ecosystem.

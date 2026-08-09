@@ -16,57 +16,22 @@ mod tests {
     use crate::atom::path_ops::{
         absolutize_cli_path, default_config_path, discover_repo_root_from, normalize_repo_root,
     };
-    use crate::atom::process_runner::inspect_python_version;
-    use crate::molecule::backend_client::{
-        base_backend_args, data_backend_invocation, project_python_for_tests, session_args,
-    };
-    use crate::molecule::repo_resolution::{resolve_python, resolve_repo_root, PROJECT_ROOT_ENV};
+    use crate::molecule::repo_resolution::{resolve_repo_root, PROJECT_ROOT_ENV};
     use crate::molecule::stata_path_resolution::resolve_windows_stata_path_with_prompt;
     use clap::{CommandFactory, Parser};
     use std::fs;
     use std::path::{Path, PathBuf};
     use tempfile::tempdir;
 
-    #[cfg(unix)]
-    use std::os::unix::fs::PermissionsExt;
-
     fn make_repo(dir: &Path) {
-        fs::create_dir_all(dir.join("src").join("stata_cli").join("entry")).unwrap();
+        fs::create_dir_all(dir.join("rust-cli")).unwrap();
         fs::write(
-            dir.join("pyproject.toml"),
-            "[project]\nname = 'stata-cli'\n",
+            dir.join("rust-cli").join("Cargo.toml"),
+            "[package]\nname = 'stata-cli'\n",
         )
         .unwrap();
-        fs::write(
-            dir.join("src")
-                .join("stata_cli")
-                .join("entry")
-                .join("backend_main.py"),
-            "print('ok')\n",
-        )
-        .unwrap();
-    }
-
-    fn write_mock_python(path: &Path) {
-        if cfg!(windows) {
-            fs::write(
-                path,
-                "@echo off\r\nif \"%1\"==\"-c\" (\r\n  echo 3.11\r\n) else (\r\n  echo Python 3.11.0\r\n)\r\n",
-            )
-            .unwrap();
-        } else {
-            fs::write(
-                path,
-                "#!/bin/sh\nif [ \"$1\" = \"-c\" ]; then\n  echo 3.11\nelse\n  echo Python 3.11.0\nfi\n",
-            )
-            .unwrap();
-            #[cfg(unix)]
-            {
-                let mut perms = fs::metadata(path).unwrap().permissions();
-                perms.set_mode(0o755);
-                fs::set_permissions(path, perms).unwrap();
-            }
-        }
+        fs::create_dir_all(dir.join("boilerplate")).unwrap();
+        fs::create_dir_all(dir.join("bin")).unwrap();
     }
 
     fn windows_like_cli() -> Cli {
@@ -229,27 +194,6 @@ mod tests {
     }
 
     #[test]
-    fn base_backend_cli_args_use_module_entrypoint() {
-        let cli = Cli::parse_from([
-            "stata-cli",
-            "--stata-path",
-            "/Applications/Stata",
-            "--log-level",
-            "INFO",
-            "doctor",
-        ]);
-
-        let args = base_backend_args(&cli, true, true);
-        assert!(args.iter().any(|arg| arg == "--stata-path"));
-        assert!(args.iter().any(|arg| arg == "--json"));
-        assert!(args.iter().any(|arg| arg == "-m"));
-        assert!(args.iter().any(|arg| arg == "stata_cli.entry.backend_main"));
-        assert!(!args
-            .iter()
-            .any(|arg| arg.to_string_lossy().contains("stata_cli_backend.py")));
-    }
-
-    #[test]
     fn discover_repo_root_from_ancestor_directory() {
         let temp = tempdir().unwrap();
         let repo = temp.path().join("stata-cli");
@@ -327,98 +271,6 @@ mod tests {
 
         assert_eq!(resolved.path, fs::canonicalize(repo).unwrap());
         assert_eq!(resolved.source, "environment");
-    }
-
-    #[test]
-    fn inspect_python_version_accepts_mock_interpreter() {
-        let dir = tempdir().unwrap();
-        let script = if cfg!(windows) {
-            dir.path().join("python311-mock.cmd")
-        } else {
-            dir.path().join("python311-mock")
-        };
-
-        write_mock_python(&script);
-
-        assert_eq!(inspect_python_version(&script).unwrap(), "3.11");
-    }
-
-    #[test]
-    fn resolve_python_uses_uv_managed_environment() {
-        if cfg!(windows) {
-            let repo = Path::new(env!("CARGO_MANIFEST_DIR"))
-                .parent()
-                .expect("rust-cli should live under the repo root");
-            let expected = project_python_for_tests(repo);
-            if !expected.exists() {
-                return;
-            }
-
-            let resolved = resolve_python(None, repo).unwrap();
-            assert_eq!(resolved.path, expected);
-            assert_eq!(resolved.source, "project .venv");
-            assert_eq!(resolved.version, "3.11");
-            return;
-        }
-
-        let temp = tempdir().unwrap();
-        let repo = temp.path().join("repo");
-        make_repo(&repo);
-        let expected = project_python_for_tests(&repo);
-        let parent = expected.parent().unwrap();
-        fs::create_dir_all(parent).unwrap();
-        write_mock_python(&expected);
-
-        let resolved = resolve_python(None, &repo).unwrap();
-        assert_eq!(resolved.path, expected);
-        assert_eq!(resolved.source, "project .venv");
-        assert_eq!(resolved.version, "3.11");
-    }
-
-    #[test]
-    fn resolve_python_errors_when_uv_environment_is_missing() {
-        let temp = tempdir().unwrap();
-        let repo = temp.path().join("repo");
-        make_repo(&repo);
-
-        let error = resolve_python(None, &repo).unwrap_err().to_string();
-        assert!(error.contains("uv sync --all-extras --python 3.11"));
-    }
-
-    #[test]
-    fn session_args_absolutizes_working_dir() {
-        let cli = Cli::parse_from(["stata-cli", "--working-dir", ".", "doctor"]);
-
-        let args = session_args(&cli);
-        let working_dir = args
-            .windows(2)
-            .find(|pair| pair[0] == "--working-dir")
-            .map(|pair| PathBuf::from(&pair[1]))
-            .unwrap();
-
-        assert_eq!(working_dir, std::env::current_dir().unwrap());
-    }
-
-    #[test]
-    fn data_backend_invocation_resolves_relative_output_against_working_dir() {
-        let cwd = std::env::current_dir().unwrap();
-        let command = DataCommands::ExportCsv {
-            output: PathBuf::from("export.csv"),
-            input_dta: PathBuf::from("scene/grilic.dta"),
-            working_dir: Some(PathBuf::from("scene")),
-            replace: true,
-        };
-
-        let (_, args) = data_backend_invocation(&command).unwrap();
-        let rendered: Vec<PathBuf> = args
-            .iter()
-            .filter(|arg| !arg.to_string_lossy().starts_with("--"))
-            .map(PathBuf::from)
-            .collect();
-
-        assert!(rendered.contains(&cwd.join("scene").join("export.csv")));
-        assert!(rendered.contains(&cwd.join("scene/grilic.dta")));
-        assert!(rendered.contains(&cwd.join("scene")));
     }
 
     #[test]

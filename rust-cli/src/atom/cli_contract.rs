@@ -3,14 +3,12 @@ use std::path::PathBuf;
 
 #[derive(Parser, Debug, Clone)]
 #[command(name = "stata-cli")]
-#[command(about = "A local Rust CLI wrapper for the Python/PyStata backend")]
+#[command(about = "A local Stata CLI for AI agents (native Rust engine)")]
 pub(crate) struct Cli {
     #[arg(long)]
     pub(crate) stata_path: Option<String>,
     #[arg(long)]
     pub(crate) stata_edition: Option<String>,
-    #[arg(long)]
-    pub(crate) python: Option<PathBuf>,
     #[arg(long, hide = true)]
     pub(crate) session_id: Option<String>,
     #[arg(long)]

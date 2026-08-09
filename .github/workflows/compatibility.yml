@@ -197,6 +197,11 @@ jobs:
         shell: zsh {0}
         run: bash ./scripts/build_macos_bin.sh
 
+      - name: Run real scene smoke test (macOS zsh)
+        if: runner.os == 'macOS' && env.SKIP_STATA_TESTS != 'true'
+        shell: zsh {0}
+        run: bash ./scripts/run_scene_smoke.sh
+
       - name: Install Zig for Windows cross-build check (macOS zsh)
         if: runner.os == 'macOS'
         shell: zsh {0}

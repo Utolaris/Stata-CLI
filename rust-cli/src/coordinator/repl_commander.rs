@@ -1,8 +1,7 @@
 use crate::atom::cli_contract::Cli;
 use crate::atom::completion_cache::CompletionCache;
-use crate::atom::json_contract::{BridgeRequest, CompletionContextResult, ExecutionResult};
+use crate::atom::json_contract::{CompletionContextResult, ExecutionResult};
 use crate::atom::path_ops::repl_history_path;
-use crate::atom::process_runner::backend_command_available;
 use crate::atom::progress_feedback::{
     backend_heartbeat_message, clear_terminal_line, heartbeat_interval, prompt_status_line,
     spinner_interval, spinner_message,
@@ -10,14 +9,15 @@ use crate::atom::progress_feedback::{
 use crate::atom::repl_formatting::{
     format_repl_output, highlight_input_line, sanitize_repl_output,
 };
-use crate::molecule::backend_client::{
-    spawn_bridge_via_backend_command, spawn_bridge_via_module, spawn_bridge_with_project_python,
+use crate::atom::stata_engine::StataEngine;
+use crate::molecule::native_backend::{
+    completion_snapshot, open_engine, run_selection, FilterOptions,
 };
 use crate::molecule::repl_completion::{
     completion_hint, completion_pairs, update_cache_from_snapshot,
 };
-use crate::molecule::repo_resolution::{resolve_python, resolve_repo_root, PROJECT_ROOT_ENV};
-use anyhow::{bail, Context, Result};
+use crate::molecule::repo_resolution::resolve_repo_root;
+use anyhow::{Context, Result};
 use rustyline::completion::{Completer, Pair};
 use rustyline::error::ReadlineError;
 use rustyline::highlight::Highlighter;
@@ -27,14 +27,15 @@ use rustyline::validate::Validator;
 use rustyline::{CompletionType, Config, Context as RustyContext, Editor, Helper};
 use std::borrow::Cow;
 use std::collections::HashSet;
-use std::io::{self, BufRead, BufReader, IsTerminal, Write};
-use std::process::{Child, ChildStdin, ChildStdout};
+use std::io::{self, IsTerminal, Write};
+use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
 
 struct ReplHelper {
     colorize: bool,
-    bridge: Arc<Mutex<BridgeClient>>,
+    bridge: Arc<Mutex<NativeBridge>>,
     buffer_words: HashSet<String>,
     completion_cache: Mutex<CompletionCache>,
 }
@@ -209,154 +210,79 @@ impl Highlighter for ReplHelper {
     }
 }
 
-struct BridgeClient {
-    child: Child,
-    stdin: Option<ChildStdin>,
-    stdout: BufReader<ChildStdout>,
+/// In-process bridge: the REPL runs the Stata engine directly in the CLI
+/// process, replacing the former Python bridge subprocess. The same session
+/// stays alive for the lifetime of the REPL so variables and macros persist
+/// between commands.
+struct NativeBridge {
+    engine: StataEngine,
+    repo_root: Option<PathBuf>,
+    filter: FilterOptions,
 }
 
-impl BridgeClient {
-    fn new(child: Child) -> Result<Self> {
-        let mut child = child;
-        let stdin = child
-            .stdin
-            .take()
-            .context("Backend bridge stdin was not available")?;
-        let stdout = child
-            .stdout
-            .take()
-            .context("Backend bridge stdout was not available")?;
-        Ok(Self {
-            child,
-            stdin: Some(stdin),
-            stdout: BufReader::new(stdout),
-        })
-    }
-
+impl NativeBridge {
     fn execute(
         &mut self,
         code: &str,
         working_dir: Option<&str>,
         show_progress: bool,
     ) -> Result<ExecutionResult> {
-        let request = BridgeRequest {
-            command: "run".to_string(),
-            code: Some(code.to_string()),
-            working_dir: working_dir.map(ToOwned::to_owned),
-            prefix: None,
-            context_kind: None,
-        };
-        self.send_request(&request)?;
-        if show_progress {
-            self.read_execution_response_with_spinner()
-        } else {
-            self.read_execution_response()
-        }
-    }
-
-    fn completion_snapshot(&mut self) -> Result<CompletionContextResult> {
-        let request = BridgeRequest {
-            command: "complete_context".to_string(),
-            code: None,
-            working_dir: None,
-            prefix: None,
-            context_kind: None,
-        };
-        self.send_request(&request)?;
-        self.read_completion_response()
-    }
-
-    fn shutdown(&mut self) -> Result<()> {
-        let _ = self.stdin.take();
-        let _ = self.child.wait();
-        Ok(())
-    }
-
-    fn send_request(&mut self, request: &BridgeRequest) -> Result<()> {
-        let stdin = self
-            .stdin
-            .as_mut()
-            .context("Backend bridge stdin is already closed")?;
-        let rendered = serde_json::to_string(request)?;
-        writeln!(stdin, "{rendered}")?;
-        stdin.flush()?;
-        Ok(())
-    }
-
-    fn read_response_line(&mut self) -> Result<String> {
-        let mut line = String::new();
-        let bytes = self.stdout.read_line(&mut line)?;
-        if bytes == 0 {
-            bail!("Backend bridge exited before returning a response");
-        }
-        Ok(line)
-    }
-
-    fn read_execution_response(&mut self) -> Result<ExecutionResult> {
-        read_execution_response_from(&mut self.stdout)
-    }
-
-    fn read_execution_response_with_spinner(&mut self) -> Result<ExecutionResult> {
-        let child = &mut self.child;
-        let stdout = &mut self.stdout;
-        thread::scope(|scope| {
-            let response_reader = scope.spawn(move || read_execution_response_from(stdout));
-            let started = std::time::Instant::now();
-            let heartbeat = heartbeat_interval();
-            let mut next_heartbeat = heartbeat;
-            let mut frame_index = 0usize;
-
-            while !response_reader.is_finished() {
-                if let Some(status) = child.try_wait()? {
-                    print!("{}", clear_terminal_line());
-                    io::stdout().flush()?;
-                    bail!("Backend bridge exited before returning a response: {status}");
-                }
-
-                let elapsed = started.elapsed();
-                print!(
-                    "{}{}",
-                    clear_terminal_line(),
-                    spinner_message(elapsed, frame_index, true)
-                );
-                io::stdout().flush()?;
-                frame_index = frame_index.wrapping_add(1);
-
-                if elapsed >= next_heartbeat {
+        let done = Arc::new(AtomicBool::new(false));
+        let spinner = if show_progress {
+            let done = Arc::clone(&done);
+            Some(thread::spawn(move || {
+                let started = std::time::Instant::now();
+                let mut next_heartbeat = heartbeat_interval();
+                let mut frame_index = 0usize;
+                while !done.load(Ordering::Relaxed) {
                     print!(
                         "{}{}",
                         clear_terminal_line(),
-                        backend_heartbeat_message(elapsed)
+                        spinner_message(started.elapsed(), frame_index, true)
                     );
-                    io::stdout().flush()?;
-                    next_heartbeat += heartbeat;
+                    io::stdout().flush().ok();
+                    frame_index = frame_index.wrapping_add(1);
+                    if started.elapsed() >= next_heartbeat {
+                        print!(
+                            "{}{}",
+                            clear_terminal_line(),
+                            backend_heartbeat_message(started.elapsed())
+                        );
+                        io::stdout().flush().ok();
+                        next_heartbeat += heartbeat_interval();
+                    }
+                    thread::sleep(spinner_interval());
                 }
+                print!("{}", clear_terminal_line());
+                io::stdout().flush().ok();
+            }))
+        } else {
+            None
+        };
 
-                thread::sleep(spinner_interval());
-            }
-
-            print!("{}", clear_terminal_line());
-            io::stdout().flush()?;
-            response_reader
-                .join()
-                .map_err(|_| anyhow::anyhow!("Backend bridge response reader panicked"))?
-        })
+        let result = run_selection(
+            &self.engine,
+            code,
+            None,
+            working_dir,
+            self.repo_root.as_deref(),
+            &self.filter,
+        );
+        done.store(true, Ordering::Relaxed);
+        if let Some(handle) = spinner {
+            let _ = handle.join();
+        }
+        Ok(result)
     }
 
-    fn read_completion_response(&mut self) -> Result<CompletionContextResult> {
-        let line = self.read_response_line()?;
-        serde_json::from_str(line.trim_end())
-            .context("Backend bridge returned invalid completion JSON")
+    fn completion_snapshot(&mut self) -> Result<CompletionContextResult> {
+        Ok(completion_snapshot(&self.engine))
     }
-}
 
-fn read_execution_response_from(stdout: &mut BufReader<ChildStdout>) -> Result<ExecutionResult> {
-    let mut line = String::new();
-    let bytes = stdout.read_line(&mut line)?;
-    if bytes == 0 {
-        bail!("Backend bridge exited before returning a response");
+    fn shutdown(&mut self) -> Result<()> {
+        self.engine.shutdown();
+        Ok(())
     }
-    serde_json::from_str(line.trim_end()).context("Backend bridge returned invalid execution JSON")
 }
 
 fn clear_screen() -> io::Result<()> {
@@ -400,7 +326,7 @@ fn mark_submitted_prompts(lines: &[String], success: bool, colorize: bool) -> io
 
 fn build_editor(
     colorize: bool,
-    bridge: Arc<Mutex<BridgeClient>>,
+    bridge: Arc<Mutex<NativeBridge>>,
 ) -> Result<Editor<ReplHelper, DefaultHistory>> {
     let config = Config::builder()
         .completion_type(CompletionType::List)
@@ -429,30 +355,19 @@ fn save_history(editor: &mut Editor<ReplHelper, DefaultHistory>) {
     }
 }
 
-fn start_bridge(cli: &Cli) -> Result<BridgeClient> {
-    if let Some(python) = cli.python.as_deref() {
-        return BridgeClient::new(spawn_bridge_via_module(python, cli)?);
-    }
-    if backend_command_available("stata-cli-backend") {
-        return BridgeClient::new(spawn_bridge_via_backend_command("stata-cli-backend", cli)?);
-    }
-    if let Ok(repo_root) = resolve_repo_root() {
-        let python = resolve_python(cli.python.as_deref(), &repo_root.path)?;
-        return BridgeClient::new(spawn_bridge_with_project_python(
-            &python.path,
-            &repo_root.path,
-            cli,
-        )?);
-    }
-    bail!(
-        "Could not start repl from the current directory. Activate an environment that provides `stata-cli-backend`, pass `--python` to a Python 3.11 interpreter with `stata_cli_backend` installed, or configure {}.",
-        PROJECT_ROOT_ENV
-    )
+fn start_native_bridge(cli: &Cli) -> Result<NativeBridge> {
+    let engine = open_engine(cli)?;
+    let repo_root = resolve_repo_root().ok().map(|root| root.path);
+    Ok(NativeBridge {
+        engine,
+        repo_root,
+        filter: FilterOptions::from_cli(cli),
+    })
 }
 
 pub(crate) fn repl_command(cli: &Cli) -> Result<()> {
     let colorize = io::stdout().is_terminal();
-    let bridge = Arc::new(Mutex::new(start_bridge(cli)?));
+    let bridge = Arc::new(Mutex::new(start_native_bridge(cli)?));
     let mut editor = build_editor(colorize, Arc::clone(&bridge))?;
     if let Some(helper) = editor.helper_mut() {
         helper.refresh_completion_cache();
