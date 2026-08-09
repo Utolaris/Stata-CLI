@@ -185,19 +185,25 @@ stata-cli doctor
 例外被严格限制在该模块内，对外只暴露安全 API：
 
 - `StataEngine::new(stata_home, edition)` —— 加载 `libstata-{mp,se,be}.dylib`
-  并初始化引擎（不传 `-pyexec`，因此不附加任何 Python）。
+  并初始化引擎（不传 `-pyexec`，因此不附加任何 Python）。进程级单例守卫
+  拒绝同一进程内创建第二个引擎。
 - `execute(cmd)` / `run_block(code)` —— 执行单行命令或临时 do-file 块，
-  返回 `(rc, output)`。
+  返回 `(rc, output)`。输出从 Stata 缓冲区（已扩大到 512MB）循环排空，
+  超过 2MB 或用户自行 `log`/`capture` 都不会丢失。
 - `set_break()` —— 从监控线程中断正在执行的命令（预留给未来的 stop/timeout 功能）。
+  原子守卫保证每次执行最多一次 break；取消状态来自该标志而非匹配
+  `--Break--` 文本。
 - `shutdown()` —— 注意：它会调用 Stata 的 `_sexit` 并直接终止当前进程，
-  因此只在 REPL 退出时使用。
+  因此只在 REPL 退出时使用，且与执行中的调用互斥。
 
 已知约束与风险：
 
 - 每个 OS 进程只能有一个 Stata 引擎（Stata 使用进程级全局状态），并行会话需要独立进程。
 - `StataSO_Execute` 不可重入，调用已用互斥锁串行化。
 - C 引擎崩溃可能导致整个 CLI 进程退出。
-- `data view` 预览通过临时 `export delimited` CSV 生成，浮点数保留 Stata 默认文本精度
+- `data view` 预览通过临时 `export delimited` CSV（带 `nolabel`）生成，并按
+  `describe` 读到的存储类型转换（前导零字符串保持字符串、value label 返回
+  数值码、全缺失列保持真实类型）。浮点数保留 Stata 默认文本精度
   （8 位有效数字），与 pandas 的完整 float32 展开略有差异；整数列输出为 JSON 整数。
 
 ## 许可证

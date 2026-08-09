@@ -15,3 +15,4 @@ pub(crate) mod progress_feedback;
 pub(crate) mod repl_formatting;
 pub(crate) mod smcl_html;
 pub(crate) mod stata_engine;
+pub(crate) mod stata_syntax;

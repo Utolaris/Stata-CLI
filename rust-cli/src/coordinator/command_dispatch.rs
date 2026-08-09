@@ -26,6 +26,18 @@ use clap::Parser;
 pub(crate) fn run() -> Result<()> {
     let cli = Cli::parse();
 
+    if cli.multi_session
+        || cli.no_multi_session
+        || cli.max_sessions.is_some()
+        || cli.session_timeout.is_some()
+    {
+        anyhow::bail!(
+            "--multi-session/--no-multi-session/--max-sessions/--session-timeout are not supported \
+             by the native engine (one Stata engine per process). Run parallel sessions as \
+             separate processes instead."
+        );
+    }
+
     if matches!(cli.command, Commands::Init) {
         let repo_root = resolve_repo_root()?;
         return init_command(&repo_root.path);

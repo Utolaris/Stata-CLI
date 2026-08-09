@@ -281,11 +281,14 @@ fn check_token_limit_and_save(output: &str, max_output_tokens: usize) -> String 
     let timestamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
-        .as_secs();
-    let log_path: PathBuf = log_dir.join(format!("stata_output_{timestamp}.log"));
+        .as_nanos();
+    let log_path: PathBuf = log_dir.join(format!(
+        "stata_output_{}_{timestamp}.log",
+        std::process::id()
+    ));
 
     if fs::write(&log_path, output).is_ok() {
-        let preview_chars = output.len().min(1000);
+        let preview_chars = 1000usize.min(output.chars().count());
         let mut message = format!(
             "Output exceeded token limit ({} tokens > {} max).\nFull output saved to: {}\n\nPlease investigate the log file for complete results.\nYou can read this file to see the full Stata output.",
             estimated_tokens,
@@ -293,8 +296,8 @@ fn check_token_limit_and_save(output: &str, max_output_tokens: usize) -> String 
             log_path.display()
         );
         if preview_chars > 0 {
-            let mut preview = output[..preview_chars].to_string();
-            if output.len() > preview_chars {
+            let mut preview: String = output.chars().take(preview_chars).collect();
+            if output.chars().count() > preview_chars {
                 preview.push_str("\n... [truncated]");
             }
             message.push_str(&format!("\n\n--- Preview ---\n{preview}"));
@@ -338,7 +341,8 @@ pub(crate) fn process_file_output(
 #[cfg(test)]
 mod tests {
     use super::{
-        apply_compact_mode_filter, deduplicate_break_messages, keep_tail_lines, process_output,
+        apply_compact_mode_filter, check_token_limit_and_save, deduplicate_break_messages,
+        keep_tail_lines, process_output,
     };
 
     #[test]
@@ -393,5 +397,14 @@ mod tests {
         assert!(!rendered.contains("line-2"));
         assert!(rendered.contains("line-3"));
         assert!(rendered.contains("line-5"));
+    }
+
+    #[test]
+    fn token_limit_truncation_handles_multibyte_unicode_without_panicking() {
+        let output = "中文输出 ".repeat(2000);
+        let rendered = check_token_limit_and_save(&output, 100);
+        assert!(rendered.contains("exceeded token limit"));
+        assert!(rendered.contains("--- Preview ---"));
+        assert!(rendered.contains("中文"));
     }
 }

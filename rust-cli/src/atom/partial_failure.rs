@@ -84,7 +84,7 @@ pub(crate) fn parse_partial_failures(output: &str) -> Vec<PartialFailure> {
                         Some(code.clone()),
                         message.clone(),
                     );
-                    if !seen.contains(&signature) {
+                    if seen.insert(signature) {
                         failures.push(PartialFailure {
                             line: current_line,
                             command: Some(command.clone()),
@@ -95,7 +95,6 @@ pub(crate) fn parse_partial_failures(output: &str) -> Vec<PartialFailure> {
                                 message
                             },
                         });
-                        seen.insert(signature);
                         current_error_index = Some(failures.len() - 1);
                     }
                 }
@@ -109,14 +108,13 @@ pub(crate) fn parse_partial_failures(output: &str) -> Vec<PartialFailure> {
                 let message = raw_line.trim().to_string();
                 let signature: FailureSignature =
                     (current_line, current_command.clone(), None, message.clone());
-                if !seen.contains(&signature) {
+                if seen.insert(signature.clone()) {
                     failures.push(PartialFailure {
                         line: current_line,
                         command: current_command.clone(),
                         return_code: None,
                         message,
                     });
-                    seen.insert(signature);
                     current_error_index = Some(failures.len() - 1);
                 }
             }

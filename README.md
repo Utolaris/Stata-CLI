@@ -187,13 +187,19 @@ The exception is confined to that one module, which exposes a small safe API:
 
 - `StataEngine::new(stata_home, edition)` – loads
   `libstata-{mp,se,be}.dylib` and initializes the engine (no `-pyexec`, so no
-  Python is attached).
+  Python is attached). A process-wide singleton guard rejects a second engine
+  in the same process.
 - `execute(cmd)` / `run_block(code)` – run one line or a temp-do-file block
-  and return `(rc, output)`.
+  and return `(rc, output)`. Output is drained from Stata's buffer (raised to
+  512 MB) until empty, so it survives 2 MB+ runs and user `log`/`capture`
+  commands.
 - `set_break()` – interrupt a running command from a monitor thread (reserved
-  for a future stop/timeout feature).
+  for a future stop/timeout feature). An atomic guard allows at most one
+  break per execution; cancellation status comes from that flag, not from
+  matching `--Break--` text.
 - `shutdown()` – note: this calls Stata's `_sexit` and terminates the current
-  process, so it is only used at REPL exit.
+  process, so it is only used at REPL exit. It is serialized against in-flight
+  executions.
 
 Known constraints and risks:
 
@@ -201,10 +207,12 @@ Known constraints and risks:
   parallel sessions must be separate processes.
 - `StataSO_Execute` is not reentrant; calls are serialized with a mutex.
 - A crash inside the C engine can take the whole CLI process down.
-- `data view` previews are produced via a temporary `export delimited` CSV, so
-  floating-point values carry Stata's default text precision (8 significant
-  digits) instead of pandas' full float32 expansion, and integer columns are
-  reported as JSON integers.
+- `data view` previews are produced via a temporary `export delimited` CSV
+  with `nolabel`, converted by the storage types read from `describe` (so
+  leading-zero strings stay strings, value labels come back as numeric codes,
+  and all-missing columns keep their real dtype). Floating-point values carry
+  Stata's default text precision (8 significant digits) instead of pandas'
+  full float32 expansion, and integer columns are reported as JSON integers.
 
 ## License
 

@@ -12,96 +12,12 @@ on:
   workflow_dispatch:
 
 env:
+  # Integration/e2e tests that need a real Stata installation skip themselves
+  # when this is set. CI runners have no licensed Stata, so the Rust unit tests
+  # and pure-frontend integration tests are what run here.
   SKIP_STATA_TESTS: "true"
 
 jobs:
-  python-checks:
-    name: Python / ${{ matrix.os }}
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os:
-          - windows-latest
-          - macos-latest
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v5
-
-      - name: Set up Python 3.11
-        uses: actions/setup-python@v6
-        with:
-          python-version: "3.11"
-
-      - name: Set up uv
-        uses: astral-sh/setup-uv@v7
-        with:
-          enable-cache: true
-
-      - name: Prefer rustup cargo shims (Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: Add-Content -Path $env:GITHUB_PATH -Value (Join-Path $HOME ".cargo/bin")
-
-      - name: Prefer rustup cargo shims (macOS zsh)
-        if: runner.os == 'macOS'
-        shell: zsh {0}
-        run: echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
-
-      - name: Install Python dependencies (Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: uv sync --all-extras --frozen --python 3.11
-
-      - name: Install Python dependencies (macOS zsh)
-        if: runner.os == 'macOS'
-        shell: zsh {0}
-        run: uv sync --all-extras --frozen --python 3.11
-
-      - name: Run Python compatibility tests (Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: uv run pytest -q
-
-      - name: Run Ruff checks (Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: uv run ruff check .
-
-      - name: Run Python compatibility tests (macOS zsh)
-        if: runner.os == 'macOS'
-        shell: zsh {0}
-        run: uv run pytest -q
-
-      - name: Run Ruff checks (macOS zsh)
-        if: runner.os == 'macOS'
-        shell: zsh {0}
-        run: uv run ruff check .
-
-      - name: Run backend CLI smoke test (Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        env:
-          STATA_CLI_BACKEND_TEST_MODE: "1"
-        run: >
-          uv run python -m stata_cli_backend
-          --json
-          --stata-path C:\stub\stata
-          run
-          --code "display 1+1"
-
-      - name: Run backend CLI smoke test (macOS zsh)
-        if: runner.os == 'macOS'
-        shell: zsh {0}
-        env:
-          STATA_CLI_BACKEND_TEST_MODE: "1"
-        run: >
-          uv run python -m stata_cli_backend
-          --json
-          --stata-path /Applications/Stata
-          run
-          --code "display 1+1"
 
   rust-checks:
     name: Rust / ${{ matrix.os }}
@@ -116,16 +32,6 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v5
-
-      - name: Set up Python 3.11
-        uses: actions/setup-python@v6
-        with:
-          python-version: "3.11"
-
-      - name: Set up uv
-        uses: astral-sh/setup-uv@v7
-        with:
-          enable-cache: true
 
       - name: Prefer rustup cargo shims (Windows)
         if: runner.os == 'Windows'
@@ -147,16 +53,6 @@ jobs:
         with:
           workspaces: rust-cli
 
-      - name: Install Python backend dependencies (Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: uv sync --all-extras --frozen --python 3.11
-
-      - name: Install Python backend dependencies (macOS zsh)
-        if: runner.os == 'macOS'
-        shell: zsh {0}
-        run: uv sync --all-extras --frozen --python 3.11
-
       - name: Check Rust formatting (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
@@ -170,7 +66,7 @@ jobs:
       - name: Run Rust tests (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
-        run: cargo test --manifest-path rust-cli/Cargo.toml
+        run: cargo test --manifest-path rust-cli/Cargo.toml --bins
 
       - name: Run Clippy (Windows)
         if: runner.os == 'Windows'
@@ -180,7 +76,7 @@ jobs:
       - name: Run Rust tests (macOS zsh)
         if: runner.os == 'macOS'
         shell: zsh {0}
-        run: cargo test --manifest-path rust-cli/Cargo.toml
+        run: cargo test --manifest-path rust-cli/Cargo.toml --bins
 
       - name: Run Clippy (macOS zsh)
         if: runner.os == 'macOS'

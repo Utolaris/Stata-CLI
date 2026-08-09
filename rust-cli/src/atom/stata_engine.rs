@@ -50,8 +50,22 @@ type FnStataSoMain = unsafe extern "C" fn(c_int, *mut *const c_char) -> c_int;
 type FnStataSoExecute = unsafe extern "C" fn(*const c_char, c_int) -> c_int;
 type FnStataSoGetOutputBuffer = unsafe extern "C" fn() -> *const c_char;
 type FnStataSoClearOutputBuffer = unsafe extern "C" fn();
+type FnStataSoSetOutputBufferSz = unsafe extern "C" fn(c_int) -> c_int;
 type FnStataSoSetBreak = unsafe extern "C" fn();
 type FnStataSoShutdown = unsafe extern "C" fn();
+
+/// One engine per OS process: Stata uses process-wide globals, so a second
+/// `StataEngine::new` in the same process would corrupt the first engine.
+static ENGINE_ACTIVE: AtomicBool = AtomicBool::new(false);
+
+/// Output buffer size in bytes. Stata's default is 2 MB, which truncates
+/// large runs; the exported `StataSO_SetOutputBufferSz` lets us raise it.
+const OUTPUT_BUFFER_SIZE: i32 = 512 * 1024 * 1024;
+
+/// Upper bound on `StataSO_GetOutputBuffer` drain iterations. Each iteration
+/// returns up to the buffer size, so this only guards against a pathological
+/// engine that never returns an empty buffer.
+const MAX_DRAIN_ITERATIONS: usize = 4096;
 
 /// Result of a single `StataSO_Execute` call.
 #[derive(Debug)]
@@ -84,13 +98,26 @@ pub(crate) struct StataEngine {
     exec_lock: Mutex<()>,
     /// Tracks whether the first-run `set seed` prefix has been applied.
     seed_done: AtomicBool,
+    /// Set by `set_break` and cleared at the start of each execution; lets
+    /// callers distinguish a real break request from text that merely looks
+    /// like `--Break--`.
+    break_requested: AtomicBool,
     shut_down: AtomicBool,
 }
 
 impl StataEngine {
     /// Load `libstata-{edition}.dylib` from `stata_home` and initialize the
     /// engine. No Python is involved: `-pyexec` is intentionally omitted.
-    pub(crate) fn new(stata_home: &Path, edition: &str) -> Result<StataEngine> {
+    pub(crate) fn new(stata_home: &Path, edition: &str) -> Result<Self> {
+        if ENGINE_ACTIVE
+            .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+            .is_err()
+        {
+            bail!(
+                "A Stata engine is already initialized in this process. \
+                 Stata uses process-wide global state; run parallel sessions in separate processes."
+            );
+        }
         let lib_path = resolve_library_path(stata_home, edition)?;
         std::env::set_var("SYSDIR_STATA", stata_home);
         // Stata MP links its own OpenMP runtime; keep it from colliding with
@@ -122,6 +149,9 @@ impl StataEngine {
             let clear_output: Symbol<FnStataSoClearOutputBuffer> = lib
                 .get(b"StataSO_ClearOutputBuffer\0")
                 .context("StataSO_ClearOutputBuffer symbol not found")?;
+            let set_output_buffer_sz: Symbol<FnStataSoSetOutputBufferSz> = lib
+                .get(b"StataSO_SetOutputBufferSz\0")
+                .context("StataSO_SetOutputBufferSz symbol not found")?;
             let set_break: Symbol<FnStataSoSetBreak> = lib
                 .get(b"StataSO_SetBreak\0")
                 .context("StataSO_SetBreak symbol not found")?;
@@ -133,6 +163,7 @@ impl StataEngine {
             let execute = *execute;
             let get_output = *get_output;
             let clear_output = *clear_output;
+            let set_output_buffer_sz = *set_output_buffer_sz;
             let set_break = *set_break;
             let shutdown = *shutdown;
 
@@ -141,10 +172,12 @@ impl StataEngine {
                 .map(|s| CString::new(s).expect("static argv has no NUL"))
                 .collect();
             let mut argv_ptrs: Vec<*const c_char> = argv.iter().map(|c| c.as_ptr()).collect();
-            let rc = main(argv.len() as c_int, argv_ptrs.as_mut_ptr());
+            let arg_count = c_int::try_from(argv.len()).expect("argv length fits in c_int");
+            let rc = main(arg_count, argv_ptrs.as_mut_ptr());
             if rc < 0 {
                 bail!("Stata engine initialization failed (rc={rc})");
             }
+            set_output_buffer_sz(OUTPUT_BUFFER_SIZE);
 
             Core {
                 _lib: lib,
@@ -156,11 +189,12 @@ impl StataEngine {
             }
         };
 
-        Ok(StataEngine {
+        Ok(Self {
             core: Arc::new(core),
             temp_dir,
             exec_lock: Mutex::new(()),
             seed_done: AtomicBool::new(false),
+            break_requested: AtomicBool::new(false),
             shut_down: AtomicBool::new(false),
         })
     }
@@ -177,13 +211,24 @@ impl StataEngine {
             .exec_lock
             .lock()
             .expect("stata engine exec lock poisoned");
+        self.break_requested.store(false, Ordering::SeqCst);
         let c = CString::new(cmd).expect("command contains NUL byte");
         unsafe {
             (self.core.clear_output)();
             let rc = (self.core.execute)(c.as_ptr(), 0);
-            let out = CStr::from_ptr((self.core.get_output)())
-                .to_string_lossy()
-                .into_owned();
+            let mut chunks: Vec<String> = Vec::new();
+            for _ in 0..MAX_DRAIN_ITERATIONS {
+                let ptr = (self.core.get_output)();
+                if ptr.is_null() {
+                    break;
+                }
+                let chunk = CStr::from_ptr(ptr).to_string_lossy().into_owned();
+                if chunk.is_empty() {
+                    break;
+                }
+                chunks.push(chunk);
+            }
+            let out = chunks.concat();
             StataOutput { rc, output: out }
         }
     }
@@ -212,12 +257,24 @@ impl StataEngine {
     /// a monitor thread while another thread is blocked in `execute`.
     ///
     /// Safety: `StataSO_SetBreak` only writes engine break flags; this matches
-    /// how pystata's stop monitor works. Call it at most once per execution.
+    /// how pystata's stop monitor works. The atomic guard allows at most one
+    /// call per execution; extra calls are ignored.
     #[allow(dead_code)] // reserved for a future stop/timeout monitor thread
     pub(crate) fn set_break(&self) {
-        unsafe {
-            (self.core.set_break)();
+        if self
+            .break_requested
+            .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+            .is_ok()
+        {
+            unsafe {
+                (self.core.set_break)();
+            }
         }
+    }
+
+    /// Whether a break was actually requested for the current execution.
+    pub(crate) fn break_requested(&self) -> bool {
+        self.break_requested.load(Ordering::SeqCst)
     }
 
     /// Shut the engine down. Safe to call multiple times.
@@ -227,6 +284,10 @@ impl StataEngine {
     /// REPL does this at exit); ordinary one-shot commands simply let the
     /// process end and do not call it.
     pub(crate) fn shutdown(&self) {
+        let _guard = self
+            .exec_lock
+            .lock()
+            .expect("stata engine exec lock poisoned");
         if !self.shut_down.swap(true, Ordering::SeqCst) {
             unsafe {
                 (self.core.shutdown)();

@@ -1,3 +1,4 @@
+pub(crate) mod data_preview;
 pub(crate) mod doctor_report;
 pub(crate) mod help_render;
 pub(crate) mod native_backend;

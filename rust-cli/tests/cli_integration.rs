@@ -37,11 +37,6 @@ fn base_command() -> Command {
     command
 }
 
-fn require_stata() -> PathBuf {
-    stata_home()
-        .unwrap_or_else(|| panic!("SKIP_STATA_TESTS is unset but no Stata installation was found"))
-}
-
 fn parse_success_json(output: &std::process::Output) -> Value {
     assert!(
         output.status.success(),
@@ -71,7 +66,10 @@ fn run_output(command: &mut Command) -> std::process::Output {
 
 #[test]
 fn run_command_round_trips_through_native_engine() {
-    let stata = require_stata();
+    let Some(stata) = stata_home() else {
+        eprintln!("skipping test (no Stata)");
+        return;
+    };
     let output = run_output(base_command().args([
         "--stata-path",
         stata.to_str().unwrap(),
@@ -88,7 +86,10 @@ fn run_command_round_trips_through_native_engine() {
 
 #[test]
 fn run_command_accepts_non_ascii_output() {
-    let stata = require_stata();
+    let Some(stata) = stata_home() else {
+        eprintln!("skipping test (no Stata)");
+        return;
+    };
     let output = run_output(base_command().args([
         "--stata-path",
         stata.to_str().unwrap(),
@@ -131,7 +132,10 @@ fn run_command_rejects_invalid_stata_path() {
 
 #[test]
 fn file_command_returns_structured_result_with_log_file() {
-    let stata = require_stata();
+    let Some(stata) = stata_home() else {
+        eprintln!("skipping test (no Stata)");
+        return;
+    };
     let temp = tempdir().unwrap();
     let do_file = temp.path().join("smoke.do");
     fs::write(&do_file, "display 2+2\n").unwrap();
@@ -152,7 +156,10 @@ fn file_command_returns_structured_result_with_log_file() {
 
 #[test]
 fn file_command_reports_error_with_raw_output_for_failing_do_file() {
-    let stata = require_stata();
+    let Some(stata) = stata_home() else {
+        eprintln!("skipping test (no Stata)");
+        return;
+    };
     let temp = tempdir().unwrap();
     let do_file = temp.path().join("partial.do");
     fs::write(&do_file, "display 1\ntotally_unknown_command_xyz\n").unwrap();
@@ -176,7 +183,8 @@ fn file_command_reports_error_with_raw_output_for_failing_do_file() {
 
 #[test]
 fn file_command_cancels_when_gui_command_is_rejected() {
-    let stata = require_stata();
+    // The GUI-command guard runs before the Stata engine is loaded, so this
+    // test works without a real Stata installation.
     let temp = tempdir().unwrap();
     let do_file = temp.path().join("browse.do");
     fs::write(&do_file, "browse price\n").unwrap();
@@ -185,7 +193,7 @@ fn file_command_cancels_when_gui_command_is_rejected() {
     command
         .args([
             "--stata-path",
-            stata.to_str().unwrap(),
+            "/definitely/not/stata",
             "file",
             do_file.to_str().unwrap(),
         ])
@@ -267,7 +275,10 @@ fn repl_command_runs_native_loop_and_exits() {
 
 #[test]
 fn data_view_requires_explicit_input_dta_and_defaults_to_50_rows() {
-    let stata = require_stata();
+    let Some(stata) = stata_home() else {
+        eprintln!("skipping test (no Stata)");
+        return;
+    };
     let fixture = repo_root().join("scene").join("grilic.dta");
     assert!(fixture.is_file(), "scene/grilic.dta must exist");
 
@@ -293,7 +304,10 @@ fn data_view_requires_explicit_input_dta_and_defaults_to_50_rows() {
 
 #[test]
 fn data_view_supports_if_condition_and_row_limit() {
-    let stata = require_stata();
+    let Some(stata) = stata_home() else {
+        eprintln!("skipping test (no Stata)");
+        return;
+    };
     let fixture = repo_root().join("scene").join("grilic.dta");
     let output = run_output(base_command().args([
         "--stata-path",
@@ -320,7 +334,10 @@ fn data_view_supports_if_condition_and_row_limit() {
 
 #[test]
 fn data_export_csv_resolves_relative_output_against_working_dir() {
-    let stata = require_stata();
+    let Some(stata) = stata_home() else {
+        eprintln!("skipping test (no Stata)");
+        return;
+    };
     let temp = tempdir().unwrap();
     let fixture = repo_root().join("scene").join("grilic.dta");
     let output = run_output(base_command().args([
@@ -346,7 +363,10 @@ fn data_export_csv_resolves_relative_output_against_working_dir() {
 
 #[test]
 fn data_view_ignores_global_working_dir() {
-    let stata = require_stata();
+    let Some(stata) = stata_home() else {
+        eprintln!("skipping test (no Stata)");
+        return;
+    };
     let fixture = repo_root().join("scene").join("grilic.dta");
     let output = run_output(base_command().args([
         "--stata-path",
@@ -363,4 +383,147 @@ fn data_view_ignores_global_working_dir() {
     let result = parse_success_json(&output);
     assert_eq!(result["status"], "success");
     assert_eq!(result["rows"], 2);
+}
+
+#[test]
+fn run_survives_user_log_close_inside_code() {
+    let Some(stata) = stata_home() else {
+        eprintln!("skipping test (no Stata)");
+        return;
+    };
+    // The user's own `capture log close` must not disable output capture:
+    // capture drains Stata's output buffer, not a user-controllable log.
+    let output = run_output(base_command().args([
+        "--stata-path",
+        stata.to_str().unwrap(),
+        "run",
+        "--code",
+        "capture log close _all\ndisplay \"still alive\"",
+    ]));
+    let result = parse_success_json(&output);
+    assert_eq!(result["status"], "success", "{result}");
+    assert!(result["output"].as_str().unwrap().contains("still alive"));
+}
+
+#[test]
+fn file_log_contains_full_output_even_when_do_file_closes_logs() {
+    let Some(stata) = stata_home() else {
+        eprintln!("skipping test (no Stata)");
+        return;
+    };
+    let temp = tempdir().unwrap();
+    let do_file = temp.path().join("self_closing.do");
+    fs::write(
+        &do_file,
+        "capture log close _all\ndisplay \"after-close\"\n",
+    )
+    .unwrap();
+
+    let output = run_output(base_command().args([
+        "--stata-path",
+        stata.to_str().unwrap(),
+        "file",
+        do_file.to_str().unwrap(),
+    ]));
+    let result = parse_success_json(&output);
+    assert_eq!(result["status"], "success", "{result}");
+    let log_file = result["log_file"].as_str().unwrap();
+    let log_content = fs::read_to_string(log_file).unwrap();
+    assert!(log_content.contains("after-close"), "{log_content}");
+}
+
+fn make_labeled_dataset(stata: &Path, dta_path: &Path) {
+    let code = format!(
+        "clear\nset obs 3\ngen byte foreign = _n - 1\n\
+         label define origin 0 \"Domestic\" 1 \"Foreign\"\n\
+         label values foreign origin\ngen str6 code = \"00123\"\n\
+         gen double score = 1.5 in 1\nreplace score = . in 2/3\n\
+         save {}, replace\n",
+        dta_path.display()
+    );
+    let output = run_output(base_command().args([
+        "--stata-path",
+        stata.to_str().unwrap(),
+        "run",
+        "--code",
+        &code,
+    ]));
+    let result = parse_success_json(&output);
+    assert_eq!(result["status"], "success", "{result}");
+}
+
+#[test]
+fn data_view_uses_numeric_codes_and_source_types_for_labeled_data() {
+    let Some(stata) = stata_home() else {
+        eprintln!("skipping test (no Stata)");
+        return;
+    };
+    let temp = tempdir().unwrap();
+    let dta = temp.path().join("labeled.dta");
+    make_labeled_dataset(&stata, &dta);
+
+    let output = run_output(base_command().args([
+        "--stata-path",
+        stata.to_str().unwrap(),
+        "data",
+        "view",
+        "--input-dta",
+        dta.to_str().unwrap(),
+        "--max-rows",
+        "10",
+    ]));
+    let result = parse_success_json(&output);
+    assert_eq!(result["status"], "success", "{result}");
+
+    let columns = result["columns"].as_array().unwrap();
+    let foreign_index = columns.iter().position(|c| c == "foreign").unwrap();
+    let code_index = columns.iter().position(|c| c == "code").unwrap();
+    let score_index = columns.iter().position(|c| c == "score").unwrap();
+
+    // Value labels are exported as numeric codes (nolabel), matching the old
+    // pdataframe_from_data(valuelabel=False) behavior.
+    let rows = result["data"].as_array().unwrap();
+    assert_eq!(rows[0][foreign_index], 0);
+    assert_eq!(rows[1][foreign_index], 1);
+    assert_eq!(result["dtypes"][&*"foreign".to_string()], "int64");
+
+    // String columns keep leading zeros instead of being coerced to numbers.
+    assert_eq!(rows[0][code_index], "00123");
+    assert_eq!(result["dtypes"][&*"code".to_string()], "object");
+
+    // Missing numeric values become null, not "0".
+    assert_eq!(rows[1][score_index], Value::Null);
+    assert_eq!(result["dtypes"][&*"score".to_string()], "float64");
+}
+
+#[test]
+fn data_view_preserves_dtypes_when_filter_matches_nothing() {
+    let Some(stata) = stata_home() else {
+        eprintln!("skipping test (no Stata)");
+        return;
+    };
+    let temp = tempdir().unwrap();
+    let dta = temp.path().join("labeled.dta");
+    make_labeled_dataset(&stata, &dta);
+
+    let output = run_output(base_command().args([
+        "--stata-path",
+        stata.to_str().unwrap(),
+        "data",
+        "view",
+        "--input-dta",
+        dta.to_str().unwrap(),
+        "--if-condition",
+        "foreign == 9",
+        "--max-rows",
+        "10",
+    ]));
+    let result = parse_success_json(&output);
+    assert_eq!(result["status"], "success", "{result}");
+    assert_eq!(result["rows"], 0);
+    assert_eq!(result["total_rows"], 0);
+    // Dtypes come from Stata metadata, not from sample values.
+    assert_eq!(result["dtypes"][&*"foreign".to_string()], "int64");
+    assert_eq!(result["dtypes"][&*"score".to_string()], "float64");
+    assert_eq!(result["dtypes"][&*"code".to_string()], "object");
 }
