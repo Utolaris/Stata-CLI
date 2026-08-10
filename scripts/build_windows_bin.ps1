@@ -3,7 +3,7 @@ $ErrorActionPreference = "Stop"
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $manifestPath = Join-Path $repoRoot "rust-cli/Cargo.toml"
-$binDir = Join-Path $repoRoot "bin"
+$binDir = Join-Path $repoRoot "skill/stata-cli/bin"
 $targetTriple = if ($env:WINDOWS_TARGET_TRIPLE) { $env:WINDOWS_TARGET_TRIPLE } else { "x86_64-pc-windows-gnu" }
 $targetBinary = Join-Path $repoRoot "rust-cli/target/$targetTriple/release/stata-cli.exe"
 $cargoBin = if ($env:CARGO_BIN) {

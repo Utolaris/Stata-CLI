@@ -1,11 +1,9 @@
 use crate::atom::config_store::load_cli_config;
-use crate::atom::json_contract::{PythonResolution, RepoRootResolution};
-use crate::atom::path_ops::{default_config_path, normalize_repo_root, project_python};
-use crate::atom::process_runner::inspect_python_version;
+use crate::atom::json_contract::RepoRootResolution;
+use crate::atom::path_ops::{default_config_path, normalize_repo_root};
 use anyhow::{bail, Result};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
-pub(crate) const COMPILED_REPO_ROOT: &str = env!("STATACLI_REPO_ROOT");
 pub(crate) const PROJECT_ROOT_ENV: &str = "STATA_CLI_PROJECT_ROOT";
 
 pub(crate) fn resolve_repo_root_from_executable() -> Option<PathBuf> {
@@ -53,14 +51,6 @@ pub(crate) fn resolve_repo_root() -> Result<RepoRootResolution> {
         }
     }
 
-    let compiled_root = PathBuf::from(COMPILED_REPO_ROOT);
-    if let Some(path) = normalize_repo_root(&compiled_root) {
-        return Ok(RepoRootResolution {
-            path,
-            source: "compiled fallback",
-        });
-    }
-
     let config_hint = default_config_path()
         .map(|path| path.display().to_string())
         .unwrap_or_else(|| "~/.config/stata-cli/config.toml".to_string());
@@ -69,53 +59,4 @@ pub(crate) fn resolve_repo_root() -> Result<RepoRootResolution> {
         PROJECT_ROOT_ENV,
         config_hint
     )
-}
-
-pub(crate) fn resolve_python(
-    explicit: Option<&Path>,
-    repo_root: &Path,
-) -> Result<PythonResolution> {
-    if let Some(path) = explicit {
-        if !path.exists() {
-            bail!("Explicit --python path does not exist: {}", path.display());
-        }
-        let version = inspect_python_version(path)?;
-        if version != "3.11" {
-            bail!(
-                "Explicit --python must point to Python 3.11, but {} is Python {}.",
-                path.display(),
-                version
-            );
-        }
-        return Ok(PythonResolution {
-            path: path.to_path_buf(),
-            source: "explicit --python",
-            version,
-        });
-    }
-
-    let candidate = project_python(repo_root);
-    if !candidate.exists() {
-        bail!(
-            "No compatible Python 3.11 interpreter found. This CLI expects the uv-managed project environment at {}. Run `uv sync --all-extras --python 3.11` in {}.",
-            candidate.display(),
-            repo_root.display()
-        );
-    }
-
-    let version = inspect_python_version(&candidate)?;
-    if version != "3.11" {
-        bail!(
-            "The uv-managed interpreter at {} is Python {}. Run `uv sync --all-extras --python 3.11` in {}.",
-            candidate.display(),
-            version,
-            repo_root.display()
-        );
-    }
-
-    Ok(PythonResolution {
-        path: candidate,
-        source: "project .venv",
-        version,
-    })
 }

@@ -1,7 +1,5 @@
-use crate::atom::json_contract::{
-    format_stata_path_source, DoctorCheck, DoctorReport, PythonResolution, RepoRootResolution,
-    ResolvedStataPath,
-};
+use crate::atom::json_contract::{DoctorCheck, DoctorReport, RepoRootResolution};
+use crate::atom::path_ops::normalize_for_external;
 use std::path::Path;
 
 pub(crate) fn repo_root_check(repo_root: &RepoRootResolution) -> DoctorCheck {
@@ -10,7 +8,7 @@ pub(crate) fn repo_root_check(repo_root: &RepoRootResolution) -> DoctorCheck {
         status: "ok",
         detail: format!(
             "{} (source: {})",
-            repo_root.path.display(),
+            normalize_for_external(&repo_root.path).display(),
             repo_root.source
         ),
     }
@@ -40,51 +38,11 @@ pub(crate) fn config_file_check(config_path: Option<&Path>) -> DoctorCheck {
     }
 }
 
-pub(crate) fn backend_entry_check(backend: &Path) -> DoctorCheck {
-    if backend.exists() {
-        DoctorCheck {
-            name: "backend_script",
-            status: "ok",
-            detail: format!("Found {}", backend.display()),
-        }
-    } else {
-        DoctorCheck {
-            name: "backend_script",
-            status: "error",
-            detail: format!("Missing {}", backend.display()),
-        }
-    }
-}
-
-pub(crate) fn stata_path_check(resolved_stata_path: &ResolvedStataPath) -> DoctorCheck {
-    match (&resolved_stata_path.path, resolved_stata_path.source) {
-        (Some(path), source) => DoctorCheck {
-            name: "stata_path",
-            status: "ok",
-            detail: format!(
-                "{} (source: {})",
-                path.display(),
-                format_stata_path_source(source)
-            ),
-        },
-        _ => DoctorCheck {
-            name: "stata_path",
-            status: "error",
-            detail: "Windows requires a valid Stata installation directory.".to_string(),
-        },
-    }
-}
-
-pub(crate) fn python_ok_check(resolution: &PythonResolution) -> DoctorCheck {
+pub(crate) fn engine_probe_ok_check(detail: String) -> DoctorCheck {
     DoctorCheck {
-        name: "python",
+        name: "engine_probe",
         status: "ok",
-        detail: format!(
-            "{} (source: {}, version: {})",
-            resolution.path.display(),
-            resolution.source,
-            resolution.version
-        ),
+        detail,
     }
 }
 
@@ -96,11 +54,31 @@ pub(crate) fn error_check(name: &'static str, detail: String) -> DoctorCheck {
     }
 }
 
-pub(crate) fn backend_probe_ok_check() -> DoctorCheck {
+pub(crate) fn warning_check(name: &'static str, detail: String) -> DoctorCheck {
     DoctorCheck {
-        name: "backend_probe",
-        status: "ok",
-        detail: "Backend successfully executed `display 1+1`.".to_string(),
+        name,
+        status: "warn",
+        detail,
+    }
+}
+
+pub(crate) fn template_dir_check(template_dir: Option<&Path>) -> DoctorCheck {
+    match template_dir {
+        Some(path) => DoctorCheck {
+            name: "template_dir",
+            status: "ok",
+            detail: format!(
+                "Boilerplate templates found at {}",
+                normalize_for_external(path).display()
+            ),
+        },
+        None => DoctorCheck {
+            name: "template_dir",
+            status: "error",
+            detail: "Boilerplate template directory not found next to the binary. Reinstall the \
+                     stata-cli skill package or set STATA_CLI_TEMPLATE_DIR."
+                .to_string(),
+        },
     }
 }
 

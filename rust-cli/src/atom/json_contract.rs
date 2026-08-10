@@ -29,15 +29,6 @@ pub(crate) struct ExecutionResult {
     pub(crate) error: Option<String>,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
-pub(crate) struct BridgeRequest {
-    pub(crate) command: String,
-    pub(crate) code: Option<String>,
-    pub(crate) working_dir: Option<String>,
-    pub(crate) prefix: Option<String>,
-    pub(crate) context_kind: Option<String>,
-}
-
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub(crate) struct CompletionContextResult {
     pub(crate) status: String,
@@ -50,13 +41,6 @@ pub(crate) struct CompletionContextResult {
 pub(crate) struct RepoRootResolution {
     pub(crate) path: PathBuf,
     pub(crate) source: &'static str,
-}
-
-#[derive(Debug, Clone)]
-pub(crate) struct PythonResolution {
-    pub(crate) path: PathBuf,
-    pub(crate) source: &'static str,
-    pub(crate) version: String,
 }
 
 #[derive(Debug, Serialize, Clone)]
@@ -81,16 +65,10 @@ pub(crate) enum StataPathSource {
     Prompt,
 }
 
-pub(crate) fn format_stata_path_source(source: Option<StataPathSource>) -> String {
-    match source {
-        Some(value) => format!("{value:?}"),
-        None => "Unknown".to_string(),
-    }
-}
-
 #[derive(Debug, Clone)]
 pub(crate) struct ResolvedStataPath {
     pub(crate) path: Option<PathBuf>,
+    #[allow(dead_code)] // kept for future platform-aware resolution reporting
     pub(crate) source: Option<StataPathSource>,
     pub(crate) save_to_config: bool,
 }

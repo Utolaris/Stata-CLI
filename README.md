@@ -2,7 +2,7 @@
 
 中文说明请见 [README.zh.md](/Users/utolaris/Documents/ai/stata-cli/README.zh.md).
 
-`stata-cli` is a local command-line tool for running Stata code, `.do` files, and `.dta` data through the Python/PyStata backend in this repository.
+`stata-cli` is a local command-line tool for running Stata code, `.do` files, and `.dta` data through a native Rust engine. It loads Stata's own shared library (`libstata-mp.dylib`) directly and calls the same `StataSO_*` C ABI that the official PyStata bridge uses — no Python interpreter, `pystata`, or virtual environment is required.
 
 This repo is designed so an AI agent can quickly understand the project, install the right dependencies, bootstrap an analysis workspace, and run Stata locally without needing VS Code.
 
@@ -20,31 +20,53 @@ C:\Program Files\Stata18
 
 If Stata is installed somewhere else, pass `--stata-path` or set it in the CLI config.
 
-### 2. Prepare the Python backend
+### 2. Install the skill package (recommended)
 
-`stata-cli` depends on the local Python backend in this repository. Use Python 3.11 because the Stata Python bridge is not compatible with newer runtimes.
+The repo ships a self-contained skill folder at `skill/stata-cli/`: `SKILL.md`,
+`bin/`, and `boilerplate/` live in one folder, so the binary and the init
+templates travel together. Users do not need to clone the repository.
+
+The fastest way to install is the official skills CLI, which pulls the skill
+straight from this GitHub repo and installs it for the agents you choose:
 
 ```bash
-uv sync --all-extras --python 3.11
+npx skills add utolaris/stata-cli \
+  --skill stata-cli \
+  --agent codex \
+  --agent claude-code \
+  --global \
+  --copy
 ```
 
-### 3. Add the repo-local binary directory to `PATH`
+`--global` installs into your user-level skill folders; `--copy` copies the
+files instead of creating symlinks (important because the skill bundles a
+binary and templates). Add or drop `--agent` lines as needed (`claude-code`,
+`cursor`, `opencode`, ...). You can also grab the `stata-cli.skill` archive
+from the GitHub Releases page and unzip it into any agent's skill folder.
 
-This project ships a repo-local binary under `bin/` because the CLI depends on the Python backend that lives in the same repository.
-
-After cloning the repo, add its `bin/` directory to your shell `PATH`:
+Alternatively, from a clone of this repo:
 
 ```bash
-export PATH="/absolute/path/to/stata-cli/bin:$PATH"
+./scripts/install_skill.sh            # installs into ~/.codex/skills/stata-cli
+./scripts/install_skill.sh --claude   # also installs into ~/.claude/skills/stata-cli
+```
+
+Existing skill folders are backed up before being replaced. `stata-cli init`
+finds `boilerplate/` next to the binary (or via `STATA_CLI_TEMPLATE_DIR`), so a
+clone is never required at runtime.
+
+If you prefer to develop inside the repo, add `skill/stata-cli/bin/` to your
+shell `PATH` instead:
+
+```bash
+export PATH="/absolute/path/to/stata-cli/skill/stata-cli/bin:$PATH"
 ```
 
 Put that line in your shell config if you want it to persist.
 
-The binary in `bin/` resolves the repository root from its own location, so keeping it inside the repo means you do not need a separate global install step.
+If you are on a platform that does not already have a matching binary in `skill/stata-cli/bin/`, build one locally and copy it there:
 
-If you are on a platform that does not already have a matching binary in `bin/`, build one locally and copy it there:
-
-macOS / Linux:
+macOS:
 
 ```bash
 ./scripts/update_repo_bin.sh
@@ -55,7 +77,7 @@ Windows PowerShell:
 ```powershell
 cargo install cargo-zigbuild --locked
 cargo zigbuild --release --target x86_64-pc-windows-gnu --manifest-path rust-cli/Cargo.toml
-Copy-Item rust-cli\\target\\x86_64-pc-windows-gnu\\release\\stata-cli.exe bin\\stata-cli.exe
+Copy-Item rust-cli\\target\\x86_64-pc-windows-gnu\\release\\stata-cli.exe skill\\stata-cli\\bin\\stata-cli.exe
 ```
 
 If you have Bash available on Windows, you can also run:
@@ -64,7 +86,7 @@ If you have Bash available on Windows, you can also run:
 bash ./scripts/build_windows_bin.sh
 ```
 
-### 4. Verify the setup
+### 3. Verify the setup
 
 ```bash
 stata-cli doctor
@@ -77,8 +99,9 @@ stata-cli doctor
 - Run inline Stata commands with `stata-cli run`
 - Execute `.do` files with `stata-cli file`
 - Inspect and export `.dta` data with `stata-cli data view` and `stata-cli data export-csv`
-- Diagnose the local Python/Stata backend with `stata-cli doctor`
+- Diagnose the local Stata engine with `stata-cli doctor`
 - Bootstrap an AI-friendly project scaffold with `stata-cli init`
+- Render real local Stata help text for `help <topic>` in the REPL and `run`
 - Use the bundled Stata skill that `stata-cli init` places under `skills/stata-cli/` in each workspace
 - Use the standalone `stata-cli repl` for human interactive work, including syntax highlighting and code completion
 
@@ -92,7 +115,7 @@ cd my-analysis
 stata-cli init
 ```
 
-`stata-cli init` copies the repo-root `boilerplate/` scaffold into the current directory, giving each analysis project a predictable structure for data, Stata code, outputs, helper scripts, and agent instructions.
+`stata-cli init` copies the `boilerplate/` scaffold that ships next to the binary into the current directory, giving each analysis project a predictable structure for data, Stata code, outputs, helper scripts, and agent instructions.
 The scaffold also includes a local `skills/stata-cli/` reference library for AI agents.
 
 ### Run Stata code
@@ -119,6 +142,7 @@ stata-cli repl
 ```
 
 The REPL is a separate human-oriented interface with a Stata-style prompt, syntax highlighting, code completion, continuation handling, and filtered output.
+`help <topic>` renders the real local Stata help text (read from Stata's installed `.sthlp` files) into the terminal. Bare `help`, `search`, and `findit` return a guidance message instead, because those commands open Stata's GUI windows and produce no terminal output. Inside `.do` files, `help` keeps Stata's native behavior.
 
 ### Diagnose the local environment
 
@@ -126,7 +150,7 @@ The REPL is a separate human-oriented interface with a Stata-style prompt, synta
 stata-cli doctor
 ```
 
-Use `doctor` to confirm that the repo-local Rust CLI, Python backend, and Stata installation can talk to each other.
+Use `doctor` to confirm that the repo-local Rust CLI can load Stata's shared library and execute a probe command.
 
 ### Work with data
 
@@ -172,10 +196,8 @@ stata-cli data export-csv --input-dta /absolute/path/to/data.dta --output /absol
 ## Common failure reasons
 
 - `stata-cli` is not installed or not on `PATH`
-- The uv-managed Python 3.11 environment is missing
-- The binary was moved away from the repository, so it can no longer locate the Python backend
 - Stata 18 is not installed, or `--stata-path` points to the wrong location
-- PyStata or the local Stata Python bridge is unavailable
+- Stata was not found at `--stata-path`, `STATA_PATH`, or the macOS defaults (`/Applications/StataNow`, `/Applications/Stata`)
 - The target `.do` or `.dta` file path does not exist
 
 If setup looks wrong, start with:
@@ -184,10 +206,54 @@ If setup looks wrong, start with:
 stata-cli doctor
 ```
 
+## Unsafe FFI
+
+The Rust crate normally forbids `unsafe` code (`unsafe_code = "warn"` since the
+project no longer uses Python). There is one deliberate exception:
+`rust-cli/src/atom/stata_engine.rs` calls into Stata's shared library through
+its exported `StataSO_*` C ABI. Stata does not ship a Rust API, and the local
+in-process bridge is the only supported way to drive Stata without a separate
+process (the official `pystata` package does the same thing through `ctypes`).
+
+The exception is confined to that one module, which exposes a small safe API:
+
+- `StataEngine::new(stata_home, edition)` – loads
+  `libstata-{mp,se,be}.dylib` and initializes the engine (no `-pyexec`, so no
+  Python is attached). A process-wide singleton guard rejects a second engine
+  in the same process.
+- `execute(cmd)` / `run_block(code)` – run one line or a temp-do-file block
+  and return `(rc, output)`. Output is drained from Stata's buffer (raised to
+  512 MB) until empty, so it survives 2 MB+ runs and user `log`/`capture`
+  commands.
+- `set_break()` – interrupt a running command from a monitor thread (reserved
+  for a future stop/timeout feature). An atomic guard allows at most one
+  break per execution; cancellation status comes from that flag, not from
+  matching `--Break--` text.
+- `shutdown()` – note: this calls Stata's `_sexit` and terminates the current
+  process, so it is only used at REPL exit. It is serialized against in-flight
+  executions.
+
+Known constraints and risks:
+
+- One Stata engine per OS process (Stata uses process-wide globals), so
+  parallel sessions must be separate processes.
+- `StataSO_Execute` is not reentrant; calls are serialized with a mutex.
+- A crash inside the C engine can take the whole CLI process down.
+- `data view` previews are produced via a temporary `export delimited` CSV
+  with `nolabel`, converted by the storage types read from `describe` (so
+  leading-zero strings stay strings, value labels come back as numeric codes,
+  and all-missing columns keep their real dtype). Floating-point values use
+  Stata's shortest round-trip text form (about 8 significant digits for float32
+  storage, full precision for double), which reconstructs the exact stored
+  value; this differs only textually from pandas' float64 widening of float32
+  columns, and integer columns are reported as JSON integers.
+
+## License
+
 ## License
 
 MIT
 
 ## Acknowledgements
 
-This project benefits from prior experimentation in AI-oriented Stata tooling and from the broader PyStata ecosystem.
+This project benefits from prior experimentation in AI-oriented Stata tooling and from reverse-engineering the `StataSO_*` ABI used by the PyStata ecosystem.

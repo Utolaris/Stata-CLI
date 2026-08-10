@@ -1,16 +1,21 @@
 use crate::atom::boilerplate_copy::copy_tree;
-use crate::atom::path_ops::boilerplate_dir;
+use crate::atom::path_ops::{resolve_template_dir, TEMPLATE_DIR_ENV};
 use anyhow::{bail, Context, Result};
 use serde_json::json;
 use std::env;
 use std::path::Path;
 use std::process::Command;
 
-pub(crate) fn init_command(repo_root: &Path) -> Result<()> {
-    let source = boilerplate_dir(repo_root);
-    if !source.exists() {
-        bail!("Boilerplate directory not found at {}", source.display());
-    }
+pub(crate) fn init_command() -> Result<()> {
+    let Some(source) = resolve_template_dir() else {
+        bail!(
+            "Boilerplate template directory not found. Expected `boilerplate/` next to the \
+             binary (for example <skill-folder>/bin/stata-cli with \
+             <skill-folder>/boilerplate). Reinstall the stata-cli skill package, or set {} \
+             to the template directory.",
+            TEMPLATE_DIR_ENV
+        );
+    };
 
     let target_dir = env::current_dir()?;
     copy_tree(&source, &target_dir)?;

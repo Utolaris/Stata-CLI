@@ -5,6 +5,7 @@ on:
     paths-ignore:
       - "**/*.md"
       - "LICENSE"
+      - "skill/stata-cli/bin/**"
   pull_request:
     paths-ignore:
       - "**/*.md"
@@ -12,96 +13,12 @@ on:
   workflow_dispatch:
 
 env:
-  SKIP_STATA_TESTS: "true"
+  # Integration/e2e tests that need a real Stata installation skip themselves
+  # when this is set. CI runners have no licensed Stata, so the Rust unit tests
+  # and pure-frontend integration tests are what run here.
+  SKIP_STATA_TESTS: "1"
 
 jobs:
-  python-checks:
-    name: Python / ${{ matrix.os }}
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os:
-          - windows-latest
-          - macos-latest
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v5
-
-      - name: Set up Python 3.11
-        uses: actions/setup-python@v6
-        with:
-          python-version: "3.11"
-
-      - name: Set up uv
-        uses: astral-sh/setup-uv@v7
-        with:
-          enable-cache: true
-
-      - name: Prefer rustup cargo shims (Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: Add-Content -Path $env:GITHUB_PATH -Value (Join-Path $HOME ".cargo/bin")
-
-      - name: Prefer rustup cargo shims (macOS zsh)
-        if: runner.os == 'macOS'
-        shell: zsh {0}
-        run: echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
-
-      - name: Install Python dependencies (Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: uv sync --all-extras --frozen --python 3.11
-
-      - name: Install Python dependencies (macOS zsh)
-        if: runner.os == 'macOS'
-        shell: zsh {0}
-        run: uv sync --all-extras --frozen --python 3.11
-
-      - name: Run Python compatibility tests (Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: uv run pytest -q
-
-      - name: Run Ruff checks (Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: uv run ruff check .
-
-      - name: Run Python compatibility tests (macOS zsh)
-        if: runner.os == 'macOS'
-        shell: zsh {0}
-        run: uv run pytest -q
-
-      - name: Run Ruff checks (macOS zsh)
-        if: runner.os == 'macOS'
-        shell: zsh {0}
-        run: uv run ruff check .
-
-      - name: Run backend CLI smoke test (Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        env:
-          STATA_CLI_BACKEND_TEST_MODE: "1"
-        run: >
-          uv run python -m stata_cli_backend
-          --json
-          --stata-path C:\stub\stata
-          run
-          --code "display 1+1"
-
-      - name: Run backend CLI smoke test (macOS zsh)
-        if: runner.os == 'macOS'
-        shell: zsh {0}
-        env:
-          STATA_CLI_BACKEND_TEST_MODE: "1"
-        run: >
-          uv run python -m stata_cli_backend
-          --json
-          --stata-path /Applications/Stata
-          run
-          --code "display 1+1"
 
   rust-checks:
     name: Rust / ${{ matrix.os }}
@@ -116,16 +33,6 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v5
-
-      - name: Set up Python 3.11
-        uses: actions/setup-python@v6
-        with:
-          python-version: "3.11"
-
-      - name: Set up uv
-        uses: astral-sh/setup-uv@v7
-        with:
-          enable-cache: true
 
       - name: Prefer rustup cargo shims (Windows)
         if: runner.os == 'Windows'
@@ -147,16 +54,6 @@ jobs:
         with:
           workspaces: rust-cli
 
-      - name: Install Python backend dependencies (Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: uv sync --all-extras --frozen --python 3.11
-
-      - name: Install Python backend dependencies (macOS zsh)
-        if: runner.os == 'macOS'
-        shell: zsh {0}
-        run: uv sync --all-extras --frozen --python 3.11
-
       - name: Check Rust formatting (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
@@ -167,35 +64,49 @@ jobs:
         shell: zsh {0}
         run: cargo fmt --manifest-path rust-cli/Cargo.toml --check
 
-      - name: Run Rust tests (Windows)
+      - name: Run Rust unit and integration tests (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
-        run: cargo test --manifest-path rust-cli/Cargo.toml
+        run: cargo test --locked --manifest-path rust-cli/Cargo.toml
 
       - name: Run Clippy (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
-        run: cargo clippy --manifest-path rust-cli/Cargo.toml --all-targets -- -D warnings
+        run: cargo clippy --locked --manifest-path rust-cli/Cargo.toml --all-targets -- -D warnings
 
-      - name: Run Rust tests (macOS zsh)
+      - name: Run Rust unit and integration tests (macOS zsh)
         if: runner.os == 'macOS'
         shell: zsh {0}
-        run: cargo test --manifest-path rust-cli/Cargo.toml
+        run: cargo test --locked --manifest-path rust-cli/Cargo.toml
 
       - name: Run Clippy (macOS zsh)
         if: runner.os == 'macOS'
         shell: zsh {0}
-        run: cargo clippy --manifest-path rust-cli/Cargo.toml --all-targets -- -D warnings
+        run: cargo clippy --locked --manifest-path rust-cli/Cargo.toml --all-targets -- -D warnings
 
       - name: Build native Rust CLI release binary (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
-        run: cargo build --release --manifest-path rust-cli/Cargo.toml
+        run: cargo build --locked --release --manifest-path rust-cli/Cargo.toml
+
+      - name: Smoke-test native Windows binary
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: '& ".\rust-cli\target\release\stata-cli.exe" --help'
 
       - name: Build repo macOS binary (macOS zsh)
         if: runner.os == 'macOS'
         shell: zsh {0}
         run: bash ./scripts/build_macos_bin.sh
+
+      - name: Upload repo macOS binary
+        if: runner.os == 'macOS'
+        uses: actions/upload-artifact@v4
+        with:
+          name: stata-cli-macos
+          path: skill/stata-cli/bin/stata-cli
+          if-no-files-found: error
+          retention-days: 14
 
       - name: Install Zig for Windows cross-build check (macOS zsh)
         if: runner.os == 'macOS'
@@ -211,3 +122,54 @@ jobs:
         if: runner.os == 'macOS'
         shell: zsh {0}
         run: bash ./scripts/build_windows_bin.sh
+
+      - name: Upload zig-built Windows binary
+        if: runner.os == 'macOS'
+        uses: actions/upload-artifact@v4
+        with:
+          name: stata-cli-windows-x86_64-gnu
+          path: skill/stata-cli/bin/stata-cli.exe
+          if-no-files-found: error
+          retention-days: 14
+
+  publish-binaries:
+    name: Publish skill binaries
+    if: github.event_name != 'pull_request'
+    needs: rust-checks
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Download Windows binary
+        uses: actions/download-artifact@v4
+        with:
+          name: stata-cli-windows-x86_64-gnu
+          path: artifacts/windows
+
+      - name: Download macOS binary
+        uses: actions/download-artifact@v4
+        with:
+          name: stata-cli-macos
+          path: artifacts/macos
+
+      - name: Copy binaries into skill bin directory
+        run: |
+          cp artifacts/windows/stata-cli.exe skill/stata-cli/bin/stata-cli.exe
+          cp artifacts/macos/stata-cli skill/stata-cli/bin/stata-cli
+          chmod +x skill/stata-cli/bin/stata-cli skill/stata-cli/bin/stata-cli.exe
+
+      - name: Commit refreshed binaries
+        run: |
+          if git diff --quiet skill/stata-cli/bin; then
+            echo "Binaries unchanged; nothing to commit."
+            exit 0
+          fi
+          git config user.name "stata-cli-ci"
+          git config user.email "stata-cli-ci@users.noreply.github.com"
+          git add skill/stata-cli/bin/stata-cli skill/stata-cli/bin/stata-cli.exe
+          git commit -m "build: refresh skill binaries from CI"
+          git push
