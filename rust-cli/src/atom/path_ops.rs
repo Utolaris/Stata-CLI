@@ -371,7 +371,7 @@ mod tests {
         // files at depth 2, so the level-2 file is found.
         assert_eq!(
             found,
-            Some(fs::canonicalize(level2.join("target.do")).unwrap())
+            Some(normalize_for_external(&level2.join("target.do")))
         );
         let expected_suffix = Path::new("a").join("b").join("target.do");
         assert!(
