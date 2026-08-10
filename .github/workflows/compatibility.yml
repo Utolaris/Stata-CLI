@@ -142,6 +142,8 @@ jobs:
     permissions:
       contents: write
       pull-requests: write
+    env:
+      GH_TOKEN: ${{ github.token }}
 
     steps:
       - name: Checkout repository
@@ -176,7 +178,9 @@ jobs:
           git add skill/stata-cli/bin/stata-cli skill/stata-cli/bin/stata-cli.exe
           git commit -m "build: refresh skill binaries from CI"
           if [[ "${{ github.ref_name }}" == "main" ]]; then
-            git push origin HEAD:refs/heads/ci/refresh-binaries
+            git fetch origin ci/refresh-binaries || true
+            git push --force-with-lease=refs/heads/ci/refresh-binaries \
+              origin HEAD:refs/heads/ci/refresh-binaries
             gh pr create \
               --base main \
               --head ci/refresh-binaries \
