@@ -10,12 +10,30 @@ use std::path::Path;
 /// Simple double quotes cover most paths. A path containing a double quote is
 /// wrapped in Stata compound double quotes (`` `"..."' ``), which Stata
 /// documents as the robust way to pass filenames with unusual characters.
+///
 /// NUL/CR/LF cannot appear in a Stata command line and are rejected instead
-/// of being silently stripped.
+/// of being silently stripped. Backticks are rejected because Stata expands
+/// macros inside quoted strings (`` `name' ``), and the compound-quote
+/// closing sequence `"'` (a double quote immediately followed by an
+/// apostrophe, including a trailing `"` that would merge with the closing
+/// quote) is rejected because it terminates the compound quote early and
+/// leaves the rest of the path as live command text.
 pub(crate) fn stata_quote_path(path: &str) -> Result<String> {
     if path.contains('\0') || path.contains('\r') || path.contains('\n') {
         bail!(
             "Path contains control characters that Stata cannot handle: {:?}",
+            path
+        );
+    }
+    if path.contains('`') {
+        bail!(
+            "Path contains a backtick, which Stata would expand as a macro: {:?}",
+            path
+        );
+    }
+    if path.contains("\"'") || path.ends_with('"') {
+        bail!(
+            "Path contains a double-quote/apostrophe sequence that would terminate Stata's compound quotes: {:?}",
             path
         );
     }
@@ -263,6 +281,26 @@ mod tests {
         assert_eq!(
             stata_quote_path("/tmp/a\"b.do").unwrap(),
             "`\"/tmp/a\"b.do\"'"
+        );
+    }
+
+    #[test]
+    fn rejects_backticks_and_compound_quote_terminators() {
+        assert!(stata_quote_path("/tmp/`macro'").is_err());
+        assert!(stata_quote_path("/tmp/a\"'b").is_err());
+        assert!(stata_quote_path("/tmp/x\"' ; shell rm -rf ~ ; //").is_err());
+        assert!(stata_quote_path("/tmp/trailing\"").is_err());
+    }
+
+    #[test]
+    fn keeps_lone_apostrophes_and_separated_quotes() {
+        assert_eq!(
+            stata_quote_path("/tmp/O'Brien.dta").unwrap(),
+            "\"/tmp/O'Brien.dta\""
+        );
+        assert_eq!(
+            stata_quote_path("/tmp/a\"b'c.do").unwrap(),
+            "`\"/tmp/a\"b'c.do\"'"
         );
     }
 

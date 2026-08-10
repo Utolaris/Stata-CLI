@@ -198,14 +198,21 @@ jobs:
           zip -r -X ../stata-cli.skill stata-cli
           cd ..
 
-      - name: Refresh release asset on latest release
+      - name: Refresh release asset on latest prerelease
         if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          # CI auto-publication may only refresh a prerelease: stable
+          # releases are never replaced without an explicit manual release.
           tag="$(gh release view --json tagName --jq .tagName 2>/dev/null || true)"
           if [[ -z "$tag" ]]; then
             echo "No latest release found; skipping asset refresh."
+            exit 0
+          fi
+          is_prerelease="$(gh release view "$tag" --json isPrerelease --jq .isPrerelease 2>/dev/null || true)"
+          if [[ "$is_prerelease" != "true" ]]; then
+            echo "Latest release $tag is not a prerelease; skipping asset refresh (CI only refreshes prereleases)."
             exit 0
           fi
           gh release upload "$tag" stata-cli.skill --clobber

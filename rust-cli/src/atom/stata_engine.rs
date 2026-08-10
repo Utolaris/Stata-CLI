@@ -69,6 +69,11 @@ const OUTPUT_BUFFER_SIZE: i32 = 512 * 1024 * 1024;
 /// engine that never returns an empty buffer.
 const MAX_DRAIN_ITERATIONS: usize = 4096;
 
+/// Cumulative cap on captured output. Keeps pathological or very chatty Stata
+/// output from exhausting the process heap; the drain loop stops at this
+/// bound and reports the truncation in the returned output instead.
+const MAX_OUTPUT_CAPTURE_BYTES: usize = 64 * 1024 * 1024;
+
 /// Result of a single `StataSO_Execute` call.
 #[derive(Debug)]
 pub(crate) struct StataOutput {
@@ -230,18 +235,38 @@ impl StataEngine {
             (self.core.clear_output)();
             let rc = (self.core.execute)(c.as_ptr(), 0);
             let mut chunks: Vec<String> = Vec::new();
+            let mut captured: usize = 0;
+            let mut truncated = false;
             for _ in 0..MAX_DRAIN_ITERATIONS {
                 let ptr = (self.core.get_output)();
                 if ptr.is_null() {
                     break;
                 }
-                let chunk = CStr::from_ptr(ptr).to_string_lossy().into_owned();
+                let chunk = CStr::from_ptr(ptr).to_string_lossy();
                 if chunk.is_empty() {
                     break;
                 }
-                chunks.push(chunk);
+                let remaining = MAX_OUTPUT_CAPTURE_BYTES.saturating_sub(captured);
+                if remaining == 0 {
+                    truncated = true;
+                    break;
+                }
+                if chunk.len() <= remaining {
+                    captured += chunk.len();
+                    chunks.push(chunk.into_owned());
+                } else {
+                    chunks.push(take_utf8_prefix(&chunk, remaining));
+                    truncated = true;
+                    break;
+                }
             }
-            let out = chunks.concat();
+            let mut out = chunks.concat();
+            if truncated {
+                out.push_str(&format!(
+                    "\n\n[output truncated: exceeded the {} MiB capture limit]\n",
+                    MAX_OUTPUT_CAPTURE_BYTES / (1024 * 1024)
+                ));
+            }
             StataOutput { rc, output: out }
         }
     }
@@ -347,6 +372,21 @@ fn now_nanos() -> u128 {
         .as_nanos()
 }
 
+/// Longest UTF-8-safe prefix of `text` that fits within `max_bytes`.
+fn take_utf8_prefix(text: &str, max_bytes: usize) -> String {
+    let mut out = String::new();
+    let mut used = 0usize;
+    for ch in text.chars() {
+        let ch_len = ch.len_utf8();
+        if used + ch_len > max_bytes {
+            break;
+        }
+        out.push(ch);
+        used += ch_len;
+    }
+    out
+}
+
 fn seed_hash() -> u64 {
     // Mirrors the previous Python backend: a stable per-engine seed derived
     // from worker id + pid, masked to 31 bits as Stata requires.
@@ -401,7 +441,7 @@ fn resolve_library_path(stata_home: &Path, edition: &str) -> Result<PathBuf> {
 
 #[cfg(test)]
 mod tests {
-    use super::{resolve_library_path, StataEngine};
+    use super::{resolve_library_path, take_utf8_prefix, StataEngine};
     use tempfile::tempdir;
 
     #[test]
@@ -429,6 +469,15 @@ mod tests {
             !second.contains("already initialized"),
             "failed init must release ENGINE_ACTIVE: {second}"
         );
+    }
+
+    #[test]
+    fn utf8_prefix_respects_byte_budget() {
+        assert_eq!(take_utf8_prefix("中文输出", 4), "中");
+        assert_eq!(take_utf8_prefix("中文输出", 6), "中文");
+        assert_eq!(take_utf8_prefix("abcd", 3), "abc");
+        assert_eq!(take_utf8_prefix("abc", 10), "abc");
+        assert_eq!(take_utf8_prefix("", 5), "");
     }
 
     #[cfg(target_os = "windows")]

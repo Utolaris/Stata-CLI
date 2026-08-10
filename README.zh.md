@@ -49,15 +49,8 @@ npx skills add utolaris/stata-cli \
 （支持 `claude-code`、`cursor`、`opencode` 等）。也可以从 GitHub Releases
 页面下载 `stata-cli.skill` 压缩包，解压后放进任意 agent 的 skill 文件夹。
 
-或者从仓库克隆后：
-
-```bash
-./scripts/install_skill.sh            # 安装到 ~/.codex/skills/stata-cli
-./scripts/install_skill.sh --claude   # 同时安装到 ~/.claude/skills/stata-cli
-```
-
-安装前会把旧 skill 目录备份。`stata-cli init` 会从二进制旁边的 `boilerplate/`
-（或 `STATA_CLI_TEMPLATE_DIR` 环境变量）定位模板，运行时不再依赖仓库。
+`stata-cli init` 会从二进制旁边的 `boilerplate/`（或
+`STATA_CLI_TEMPLATE_DIR` 环境变量）定位模板，运行时不再依赖仓库。
 
 如果要在仓库内开发，也可以把 `skill/stata-cli/bin/` 加入 shell 的 `PATH`：
 
@@ -88,10 +81,6 @@ Copy-Item rust-cli\\target\\x86_64-pc-windows-gnu\\release\\stata-cli.exe skill\
 ```bash
 bash ./scripts/build_windows_bin.sh
 ```
-
-`install_skill.sh` 会把 `skill/stata-cli/` 整个文件夹安装到
-`~/.codex/skills/stata-cli`（`--claude` 可同时安装到 `~/.claude/skills`），
-旧目录会先备份。
 
 ### 3. 验证安装
 

@@ -56,16 +56,8 @@ binary and templates). Add or drop `--agent` lines as needed (`claude-code`,
 `cursor`, `opencode`, ...). You can also grab the `stata-cli.skill` archive
 from the GitHub Releases page and unzip it into any agent's skill folder.
 
-Alternatively, from a clone of this repo:
-
-```bash
-./scripts/install_skill.sh            # installs into ~/.codex/skills/stata-cli
-./scripts/install_skill.sh --claude   # also installs into ~/.claude/skills/stata-cli
-```
-
-Existing skill folders are backed up before being replaced. `stata-cli init`
-finds `boilerplate/` next to the binary (or via `STATA_CLI_TEMPLATE_DIR`), so a
-clone is never required at runtime.
+`stata-cli init` finds `boilerplate/` next to the binary (or via
+`STATA_CLI_TEMPLATE_DIR`), so a clone is never required at runtime.
 
 If you prefer to develop inside the repo, add `skill/stata-cli/bin/` to your
 shell `PATH` instead:
