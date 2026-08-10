@@ -190,3 +190,22 @@ jobs:
           else
             git push origin HEAD:"${{ github.ref_name }}"
           fi
+
+      - name: Package skill ZIP for release
+        if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
+        run: |
+          cd skill
+          zip -r -X ../stata-cli.skill stata-cli
+          cd ..
+
+      - name: Refresh release asset on latest release
+        if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="$(gh release view --json tagName --jq .tagName 2>/dev/null || true)"
+          if [[ -z "$tag" ]]; then
+            echo "No latest release found; skipping asset refresh."
+            exit 0
+          fi
+          gh release upload "$tag" stata-cli.skill --clobber

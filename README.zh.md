@@ -1,12 +1,16 @@
 # stata-cli
 
-`stata-cli` 是一个本地命令行工具，通过原生 Rust 引擎直接加载 Stata 自带的共享库
-（`libstata-mp.dylib`），调用官方 PyStata 桥使用的同一组 `StataSO_*` C ABI 来运行
-Stata 代码、`.do` 文件和 `.dta` 数据。**不再需要 Python、pystata 或虚拟环境。**
+**让 OpenAI Codex、Claude Code、Cursor、OpenCode 等 AI 编码代理在本机直接运行 Stata。**
 
-这个仓库的目标是让 AI 代理能快速理解项目、安装依赖、初始化分析工作区，并在本机直接运行 Stata，而不必依赖 VS Code。
+`stata-cli` 是面向 Stata 18、Stata 19 和 StataNow 的原生 Rust CLI 与 Agent
+Skill。AI 代理可以用它执行 Stata 命令和 `.do` 文件、查看 `.dta` 数据集、查询
+Stata 帮助，并获得结构化 JSON 结果——不需要 Python、PyStata、Jupyter 或 Stata
+GUI。引擎直接加载 Stata 自带的共享库（`libstata-mp.dylib` / `mp-64.dll`），
+调用官方 PyStata 桥使用的同一组 `StataSO_*` C ABI，行为与所安装的 Stata 完全一致。
 
-它也提供了一个独立的 REPL，方便人工交互，支持语法高亮和代码补全。
+适用于 AI 辅助计量经济学、统计分析、可复现研究与自动化 Stata 工作流。非 REPL
+命令返回结构化 JSON；同时提供带语法高亮和代码补全的独立 REPL 供人工交互。AI
+代理还可以用 `stata-cli init` 一键初始化完整的分析工作区，无需依赖 VS Code。
 
 ## 安装
 

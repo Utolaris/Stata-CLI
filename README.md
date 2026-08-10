@@ -1,12 +1,21 @@
 # stata-cli
 
-中文说明请见 [README.zh.md](/Users/utolaris/Documents/ai/stata-cli/README.zh.md).
+中文说明请见 [README.zh.md](./README.zh.md).
 
-`stata-cli` is a local command-line tool for running Stata code, `.do` files, and `.dta` data through a native Rust engine. It loads Stata's own shared library (`libstata-mp.dylib`) directly and calls the same `StataSO_*` C ABI that the official PyStata bridge uses — no Python interpreter, `pystata`, or virtual environment is required.
+**Run Stata locally from AI coding agents such as OpenAI Codex, Claude Code, Cursor, and OpenCode.**
 
-This repo is designed so an AI agent can quickly understand the project, install the right dependencies, bootstrap an analysis workspace, and run Stata locally without needing VS Code.
+`stata-cli` is a native Rust CLI and Agent Skill for Stata 18, Stata 19, and
+StataNow. It lets AI agents execute Stata commands and `.do` files, inspect
+`.dta` datasets, retrieve Stata help, and receive structured JSON results — no
+Python, PyStata, Jupyter, or the Stata GUI required. The engine loads Stata's
+own shared library (`libstata-mp.dylib` / `mp-64.dll`) and calls the official
+`StataSO_*` C ABI directly, so behavior matches the installed Stata exactly.
 
-This CLI also provides a standalone REPL for human exploration, with syntax highlighting and code completion.
+Use it for AI-assisted econometrics, statistical analysis, reproducible
+research, and autonomous Stata workflows. Non-REPL commands return structured
+JSON; a standalone REPL with syntax highlighting and code completion is
+included for human exploration. An AI agent can also bootstrap a complete
+analysis workspace with `stata-cli init`, without needing VS Code.
 
 ## Install
 
