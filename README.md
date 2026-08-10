@@ -10,15 +10,21 @@ This CLI also provides a standalone REPL for human exploration, with syntax high
 
 ## Install
 
-### 1. Install Stata 19.5
+### 1. Install Stata 18 or 19
 
-Install Stata 19.5 (or newer) first. On Windows, the default location is best:
+`stata-cli` supports Stata 18 and Stata 19, including StataNow releases (for
+example Stata 19.5). On macOS, both `/Applications/StataNow` and
+`/Applications/Stata` are detected automatically. Stata 17 and older versions
+are untested and not guaranteed to work.
+
+On Windows, the default location is best:
 
 ```text
 C:\Program Files\Stata19
 ```
 
-If Stata is installed somewhere else, pass `--stata-path` or set it in the CLI config.
+(For Stata 18, the Windows default is `C:\Program Files\Stata18`.) If Stata is
+installed somewhere else, pass `--stata-path` or set it in the CLI config.
 
 ### 2. Install the skill package (recommended)
 
@@ -91,6 +97,12 @@ bash ./scripts/build_windows_bin.sh
 ```bash
 stata-cli doctor
 ```
+
+## Releases
+
+- **v1.0.1** — Stata 18/19 support (including StataNow); skill updates with
+  Stata 19 feature references; Stata 19 feature e2e tests; ad-hoc code signing
+  for macOS builds.
 
 ## Capabilities
 

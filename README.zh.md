@@ -10,15 +10,20 @@ Stata 代码、`.do` 文件和 `.dta` 数据。**不再需要 Python、pystata �
 
 ## 安装
 
-### 1. 安装 Stata 19.5
+### 1. 安装 Stata 18 或 19
 
-请先安装 Stata 19.5（或更新版本）。Windows 下建议使用默认路径：
+`stata-cli` 支持 Stata 18 和 Stata 19（含 StataNow 版本，例如 19.5）。
+macOS 上会自动检测 `/Applications/StataNow` 和 `/Applications/Stata`。
+Stata 17 及更低版本未经测试，不保证能正常运行。
+
+Windows 下建议使用默认路径：
 
 ```text
 C:\Program Files\Stata19
 ```
 
-如果 Stata 装在别的位置，可以通过 `--stata-path` 指定，或者在 CLI 配置里设置。
+（Stata 18 的 Windows 默认路径是 `C:\Program Files\Stata18`。）如果 Stata
+装在别的位置，可以通过 `--stata-path` 指定，或者在 CLI 配置里设置。
 
 ### 2. 安装 skill 包（推荐）
 
@@ -92,6 +97,11 @@ bash ./scripts/build_windows_bin.sh
 ```bash
 stata-cli doctor
 ```
+
+## 版本发布
+
+- **v1.0.1** —— 支持 Stata 18/19（含 StataNow）；Skill 更新（新增 Stata 19
+  功能参考）；新增 Stata 19 功能 e2e 测试；macOS 构建自动 ad-hoc 签名。
 
 ## 功能
 
