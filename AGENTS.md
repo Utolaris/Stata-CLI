@@ -8,16 +8,17 @@
 .
 ├── AGENTS.md
 ├── README.md
-├── skill/stata-cli/         # Self-contained skill package (SKILL.md + bin/ + boilerplate/)
-│   ├── SKILL.md             # Codex/Claude Code skill manifest
+├── skill/stata-cli/         # Self-contained skill package (SKILL.md + bin/ + references/ + boilerplate/)
+│   ├── SKILL.md             # Codex/Claude Code skill manifest + routing table
 │   ├── bin/                 # Repo-local CLI binaries
+│   ├── references/          # Stata reference library (routed from SKILL.md)
+│   ├── packages/            # Community package guidance
 │   └── boilerplate/         # `stata-cli init` scaffold source
 │       ├── AGENTS.md
 │       ├── data/
 │       ├── do/
 │       ├── outputs/
-│       ├── scripts/
-│       └── skills/stata-cli/    # Workspace-local Stata skill copied by `init`
+│       └── scripts/
 ├── rust-cli/                # Rust CLI, REPL, native Stata engine (StataSO FFI)
 ├── scene/                   # Real smoke-test workspace
 └── scripts/                 # Build and maintenance helpers
@@ -26,7 +27,10 @@
 ## Working Rules
 
 - Keep the repo-local binaries in `skill/stata-cli/bin/`; repo-root discovery depends on that location.
-- Treat `skill/stata-cli/boilerplate/` as the source of truth for files created by `stata-cli init`, including the bundled workspace skill.
+- Treat `skill/stata-cli/boilerplate/` as the source of truth for files created by `stata-cli init`.
+- Treat `skill/stata-cli/` itself as the installed skill package: SKILL.md,
+  references/, packages/, and bin/ ship together and are not duplicated into
+  workspaces by `init`.
 - When changing CLI behavior or REPL behavior, verify the Rust tests and run real Stata smoke tests from `scene/` (set `SKIP_STATA_TESTS=1` to skip them).
 - Real smoke tests should run from `scene/` and use `scene/grilic.dta`.
 - The native Stata engine (`rust-cli/src/atom/stata_engine.rs`) is the only

@@ -1,78 +1,127 @@
 ---
 name: stata-cli
-description: Local Stata CLI (native Rust engine, no Python) for running Stata code and .do files, bootstrapping AI-ready Stata workspaces, inspecting and exporting .dta data, rendering offline Stata help text, and diagnosing the local Stata engine. Use when the user wants to run or debug Stata, initialize a Stata analysis workspace, preview or export dataset contents, or get Stata command help while staying in the local stata-cli workflow.
+description: |
+  Use the local `stata-cli` command for Stata work on this machine. Trigger this skill when the user wants to bootstrap an AI-ready Stata workspace, write or debug `.do` files, inspect `.dta` data, export CSVs, or needs Stata syntax/package guidance while staying inside the local `stata-cli` workflow.
 ---
 
 # stata-cli
 
-Drive the locally installed Stata through the `stata-cli` binary. The binary
-loads Stata's own engine in-process, so no Python, pystata, or virtual
-environment is needed.
+Use `stata-cli` as the default local entrypoint for Stata tasks in AI agent.
 
-## Binary
-
-The binary lives at `bin/stata-cli` relative to this file's folder (for
-example `~/.codex/skills/stata-cli/bin/stata-cli`). Call it by absolute path or
-add its folder to `PATH` once.
+This skill now includes a local reference library.
+Do not load everything. Read only the 1-3 files relevant to the current task.
 
 ## Core workflow
 
-1. Bootstrap a workspace:
+For AI-driven work:
 
-   ```bash
-   mkdir my-analysis && cd my-analysis
-   stata-cli init
-   ```
+```bash
+mkdir my-analysis
+cd my-analysis
+stata-cli init
+stata-cli file do/analysis.do
+stata-cli data view --input-dta /absolute/path/to/data.dta --max-rows 20
+stata-cli data export-csv --input-dta /absolute/path/to/data.dta --output /absolute/path/to/out.csv --replace
+```
 
-   `init` copies the `boilerplate/` templates (AGENTS.md, do/, scripts/, and
-   the local `skills/stata-cli` reference library) into the current directory.
-   The templates are resolved next to the binary, so no repository clone is
-   required.
+## Routing table
 
-2. Run code or files:
+Read only the files relevant to the task. Paths are relative to this `SKILL.md`.
 
-   ```bash
-   stata-cli run --code 'display 2+2'
-   stata-cli file do/analysis.do
-   ```
+### Basics and workflow
 
-3. Inspect and export data:
+- `references/basics-getting-started.md`
+- `references/workflow-best-practices.md`
+- `references/programming-basics.md`
+- `references/advanced-programming.md`
 
-   ```bash
-   stata-cli data view --input-dta /abs/path/data.dta --max-rows 20
-   stata-cli data export-csv --input-dta /abs/path/data.dta --output out.csv --replace
-   ```
+### Data work
 
-4. Diagnose the setup:
+- `references/data-management.md`
+- `references/data-import-export.md`
+- `references/string-functions.md`
+- `references/date-time-functions.md`
+- `references/variables-operators.md`
+- `references/mathematical-functions.md`
 
-   ```bash
-   stata-cli doctor
-   ```
+### Statistics and econometrics
 
-Non-REPL commands return structured JSON (`status`, `output`, `error`,
-`log_file`, ...) so agents can inspect results reliably.
+- `references/descriptive-statistics.md`
+- `references/linear-regression.md`
+- `references/panel-data.md`
+- `references/time-series.md`
+- `references/limited-dependent-variables.md`
+- `references/bootstrap-simulation.md`
+- `references/survey-data-analysis.md`
+- `references/missing-data-handling.md`
+- `references/maximum-likelihood.md`
+- `references/gmm-estimation.md`
 
-## Interactive REPL
+### Stata 19 features (verified on Stata 19.5)
 
-`stata-cli repl` keeps one Stata session alive with a Stata-style prompt.
-`help <topic>` renders the real local Stata help text into the terminal;
-type `quit` (or the legacy `:exit`) to quit.
+- `references/panel-var-xtvar.md` — panel VAR (`xtvar`)
+- `references/high-dimensional-fixed-effects.md` — HDFE absorption in `areg`, `xtreg, fe`, `ivregress 2sls`
+- `references/cate.md` — conditional average treatment effects (`cate`)
+- `references/weak-instruments.md` — weak-instrument-robust inference (`estat weakrobust`)
+- `references/control-functions.md` — control-function models (`cfregress`, `cfprobit`)
+- `references/svar-with-iv.md` — SVAR via instruments (`ivsvar`)
+- `references/iv-local-projections.md` — IV local projections (`ivlpirf`)
+- `references/correlated-random-effects.md` — CRE model and Mundlak test (`xtreg, cre`, `estat mundlak`)
+- `references/gmm-xtinstruments.md` — GMM with panel-style instruments (`gmm ... xtinstruments()`)
 
-## Reference library
+### Causal inference and advanced methods
 
-Read only the 1-3 files relevant to the current task:
+- `references/difference-in-differences.md`
+- `references/regression-discontinuity.md`
+- `references/matching-methods.md`
+- `references/treatment-effects.md`
+- `references/sample-selection.md`
+- `references/nonparametric-methods.md`
+- `references/sem-factor-analysis.md`
+- `references/survival-analysis.md`
+- `references/spatial-analysis.md`
+- `references/machine-learning.md`
 
-- `boilerplate/skills/stata-cli/references/<topic>.md` - method guidance (for
-  example linear-regression, panel-data, time-series)
-- `boilerplate/skills/stata-cli/packages/<package>.md` - user-written package
-  guidance (estout, reghdfe, coefplot, ...)
-- `boilerplate/skills/stata-cli/SKILL.md` - full routing table
+### Graphics, tables, and reporting
 
-## Templates and maintenance
+- `references/graphics.md`
+- `references/tables-reporting.md`
 
-- `boilerplate/` is the init template source; edit it to customize new
-  workspaces. Keep `bin/stata-cli` and `boilerplate/` in the same skill folder.
-- Replace `bin/stata-cli` by building from the source repo with
-  `cargo build --release --manifest-path ../../rust-cli/Cargo.toml` (macOS) or
-  `bash ../../scripts/build_windows_bin.sh` (Windows).
+### Mata
 
+- `references/mata-introduction.md`
+- `references/mata-data-access.md`
+- `references/mata-matrix-operations.md`
+- `references/mata-programming.md`
+
+### Community packages
+
+- `packages/package-management.md`
+- `packages/reghdfe.md`
+- `packages/estout.md`
+- `packages/coefplot.md`
+- `packages/winsor.md`
+- `packages/event-study.md`
+- `packages/rdrobust.md`
+- `packages/synth.md`
+- `packages/ivreg2.md`
+- `packages/xtabond2.md`
+- `packages/binsreg.md`
+- `packages/nprobust.md`
+- `packages/asdoc.md`
+- `packages/data-manipulation.md`
+- `packages/graph-schemes.md`
+
+## Practical defaults
+
+- If the task is more than a few lines, initialize a workspace and write `do/analysis.do`.
+- If the user already has a project folder, keep outputs inside its `outputs/` directory.
+- If charts are needed, prefer exporting tidy results from Stata and plotting with Python.
+- If a package is needed but may not be installed, check with `which` before using it.
+
+## When failure 
+If setup looks wrong, run:
+
+```bash
+stata-cli doctor
+```

@@ -114,7 +114,7 @@ stata-cli doctor
 - Diagnose the local Stata engine with `stata-cli doctor`
 - Bootstrap an AI-friendly project scaffold with `stata-cli init`
 - Render real local Stata help text for `help <topic>` in the REPL and `run`
-- Use the bundled Stata skill that `stata-cli init` places under `skills/stata-cli/` in each workspace
+- Use the installed `stata-cli` skill's reference library for Stata syntax and package guidance
 - Use the standalone `stata-cli repl` for human interactive work, including syntax highlighting and code completion
 
 Non-REPL commands are intentionally AI-friendly: they return structured JSON and avoid dumping unnecessary terminal noise into stdout.
@@ -128,7 +128,9 @@ stata-cli init
 ```
 
 `stata-cli init` copies the `boilerplate/` scaffold that ships next to the binary into the current directory, giving each analysis project a predictable structure for data, Stata code, outputs, helper scripts, and agent instructions.
-The scaffold also includes a local `skills/stata-cli/` reference library for AI agents.
+The scaffold stays minimal; the Stata reference library lives in the installed
+`stata-cli` skill package (`references/` and `packages/`) instead of being
+copied into every workspace.
 
 ### Run Stata code
 
@@ -194,7 +196,7 @@ Then keep the working pattern simple:
 - Use Python scripts under `scripts/` for final charts saved into `outputs/`
 - If the user explicitly wants Stata graphs, write explicit `graph export "outputs/..."` commands in the `.do` file instead of relying on CLI graph capture
 - Run `which <command>` before using third-party Stata packages, and ask before installing anything
-- Read the workspace-local `skills/stata-cli/` reference library when you need Stata syntax, package guidance, or idiomatic patterns
+- Read the installed `stata-cli` skill's `references/` and `packages/` when you need Stata syntax, package guidance, or idiomatic patterns
 
 ### Export data to CSV
 

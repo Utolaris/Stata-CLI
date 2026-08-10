@@ -113,7 +113,7 @@ stata-cli doctor
 - 使用 `stata-cli doctor` 诊断本地 Stata 引擎
 - 使用 `stata-cli init` 初始化一个适合 AI 协作的项目骨架
 - 在 REPL 和 `run` 里用 `help <主题>` 渲染真实的本地 Stata 帮助文本
-- 使用 `stata-cli init` 放入工作区的 `skills/stata-cli/` 本地 Stata skill
+- 使用已安装的 `stata-cli` skill 参考资料库获取 Stata 语法和包说明
 - 使用 `stata-cli repl` 打开面向人工交互的独立 REPL
 
 非 REPL 命令是刻意为 AI 设计的：它们返回结构化 JSON，不会把大量无关终端噪声直接刷到 stdout。
@@ -127,7 +127,8 @@ stata-cli init
 ```
 
 `stata-cli init` 会把随二进制一起分发的 `boilerplate/` 骨架复制到当前目录，为数据、Stata 代码、输出、辅助脚本和代理说明提供统一结构。
-这个骨架里也包含了 `skills/stata-cli/` 的本地参考资料，供 AI 代理使用。
+骨架保持精简；Stata 参考资料库位于已安装的 `stata-cli` skill 包中
+（`references/` 和 `packages/`），不会复制进每个工作区。
 
 ### 运行 Stata 代码
 
@@ -196,7 +197,7 @@ stata-cli init
 - 最终图表优先用 `scripts/` 下的 Python 脚本保存到 `outputs/`
 - 如果用户明确要 Stata 图，请在 `.do` 文件里写明确的 `graph export "outputs/..."`，不要依赖 CLI 自动抓图
 - 使用第三方 Stata 包前先运行 `which <command>`，安装前要先询问
-- 需要 Stata 语法、包说明或常见模式时，优先阅读工作区里的 `skills/stata-cli/` 参考资料
+- 需要 Stata 语法、包说明或常见模式时，阅读已安装 `stata-cli` skill 的 `references/` 和 `packages/`
 
 ### 导出为 CSV
 
