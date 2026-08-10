@@ -256,11 +256,13 @@ fn init_command_creates_agent_workspace_scaffold() {
     assert!(target.join("do").is_dir());
     assert!(target.join("outputs").is_dir());
     assert!(target.join("data").is_dir());
-    assert!(target
+    // The skill package is no longer duplicated into workspaces by `init`;
+    // it ships once in the installed skill directory.
+    assert!(!target
         .join("skills")
         .join("stata-cli")
         .join("SKILL.md")
-        .is_file());
+        .exists());
 }
 
 #[test]

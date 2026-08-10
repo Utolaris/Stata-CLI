@@ -166,7 +166,10 @@ pub(crate) fn clean_help_topic(raw: &str) -> String {
         .collect()
 }
 
-fn skill_doc_for_help_topic(base: &Path, topic: &str) -> Option<String> {
+/// Look up a reference doc for `topic` inside a skill package root (a
+/// directory containing `references/`, `packages/`, and `SKILL.md`).
+/// Returns the doc path relative to that root.
+fn skill_doc_for_help_topic(skill_root: &Path, topic: &str) -> Option<String> {
     let normalized = topic.trim().to_lowercase();
     let aliases: &[(&str, &str)] = &[
         ("esttab", "estout"),
@@ -182,31 +185,30 @@ fn skill_doc_for_help_topic(base: &Path, topic: &str) -> Option<String> {
     candidates.push(("references".to_string(), normalized));
 
     for (folder, name) in candidates {
-        let relative = Path::new("skills")
-            .join("stata-cli")
-            .join(&folder)
-            .join(format!("{name}.md"));
-        if base.join(&relative).is_file() {
-            return Some(format!("skills/stata-cli/{folder}/{name}.md"));
+        let relative = Path::new(&folder).join(format!("{name}.md"));
+        if skill_root.join(&relative).is_file() {
+            return Some(format!("{folder}/{name}.md"));
         }
     }
-    let skill = Path::new("skills").join("stata-cli").join("SKILL.md");
-    if base.join(&skill).is_file() {
-        return Some("skills/stata-cli/SKILL.md".to_string());
+    if skill_root.join("SKILL.md").is_file() {
+        return Some("SKILL.md".to_string());
     }
     None
 }
 
 fn doc_pointer(topic: &str, workspace: Option<&Path>, repo_root: Option<&Path>) -> Option<String> {
+    // Workspaces created by older `stata-cli init` versions still carry the
+    // skill under `skills/stata-cli/`; keep routing them for compatibility.
     if let Some(workspace) = workspace {
-        if let Some(doc) = skill_doc_for_help_topic(workspace, topic) {
-            return Some(doc);
+        let legacy_skill = workspace.join("skills").join("stata-cli");
+        if let Some(doc) = skill_doc_for_help_topic(&legacy_skill, topic) {
+            return Some(format!("skills/stata-cli/{doc}"));
         }
     }
     if let Some(root) = repo_root {
-        let skill_boilerplate = root.join("skill").join("stata-cli").join("boilerplate");
-        if let Some(doc) = skill_doc_for_help_topic(&skill_boilerplate, topic) {
-            return Some(doc);
+        let skill_package = root.join("skill").join("stata-cli");
+        if let Some(doc) = skill_doc_for_help_topic(&skill_package, topic) {
+            return Some(format!("skill/stata-cli/{doc}"));
         }
     }
     None
@@ -225,16 +227,16 @@ pub(crate) fn help_guidance_message(
         "search" | "findit" => format!(
             "`{command}` opens the interactive Stata search window and produces no terminal \
              output in CLI mode. Use `help <topic>` to render local help text instead, or read \
-             the `skills/stata-cli/SKILL.md` reference library."
+             the `stata-cli` skill's reference library."
         ),
         "help" => match topic {
             None | Some("") => "`help` needs a topic in CLI mode (Stata would open its Viewer \
                 window instead of printing to the terminal). Try `help regress`, or read the \
-                `skills/stata-cli/SKILL.md` reference library."
+                `stata-cli` skill's reference library."
                 .to_string(),
             Some(topic) => format!(
                 "No local help file found for `{topic}`. Check the spelling (for example \
-                 `help regress`), or read the `skills/stata-cli/SKILL.md` reference library."
+                 `help regress`), or read the `stata-cli` skill's reference library."
             ),
         },
         other => format!("`{other}` is not supported in CLI mode."),
@@ -353,5 +355,16 @@ mod tests {
         let message =
             help_guidance_message("help", Some("linear-regression"), Some(workspace), None);
         assert!(message.contains("skills/stata-cli/references/linear-regression.md"));
+    }
+
+    #[test]
+    fn guidance_points_at_repo_skill_docs() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path();
+        let doc = root.join("skill").join("stata-cli").join("references");
+        std::fs::create_dir_all(&doc).unwrap();
+        std::fs::write(doc.join("linear-regression.md"), "x").unwrap();
+        let message = help_guidance_message("help", Some("linear-regression"), None, Some(root));
+        assert!(message.contains("skill/stata-cli/references/linear-regression.md"));
     }
 }
