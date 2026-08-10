@@ -228,7 +228,7 @@ mod tests {
         let temp = tempdir().unwrap();
         let config_path = temp.path().join("config.toml");
         let project_root = temp.path().join("project");
-        let stata_path = temp.path().join("Stata18");
+        let stata_path = temp.path().join("Stata19");
         fs::write(
             &config_path,
             format!(
@@ -250,7 +250,7 @@ mod tests {
         let config_path = temp.path().join("config.toml");
         let config = CliConfig {
             project_root: Some(temp.path().join("repo")),
-            stata_path: Some(temp.path().join("Stata18")),
+            stata_path: Some(temp.path().join("Stata19")),
         };
 
         write_cli_config(&config_path, &config).unwrap();
@@ -300,7 +300,7 @@ mod tests {
             return;
         }
         let temp = tempdir().unwrap();
-        let stata_path = temp.path().join("Stata18");
+        let stata_path = temp.path().join("Stata19");
         fs::create_dir_all(&stata_path).unwrap();
         let cli = Cli::parse_from([
             "stata-cli",
@@ -325,7 +325,7 @@ mod tests {
             return;
         }
         let temp = tempdir().unwrap();
-        let stata_path = temp.path().join("Stata18");
+        let stata_path = temp.path().join("Stata19");
         fs::create_dir_all(&stata_path).unwrap();
         let config = CliConfig {
             project_root: None,

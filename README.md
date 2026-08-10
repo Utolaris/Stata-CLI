@@ -10,12 +10,12 @@ This CLI also provides a standalone REPL for human exploration, with syntax high
 
 ## Install
 
-### 1. Install Stata 18
+### 1. Install Stata 19.5
 
-Install Stata 18 first. On Windows, the default location is best:
+Install Stata 19.5 (or newer) first. On Windows, the default location is best:
 
 ```text
-C:\Program Files\Stata18
+C:\Program Files\Stata19
 ```
 
 If Stata is installed somewhere else, pass `--stata-path` or set it in the CLI config.
@@ -196,7 +196,7 @@ stata-cli data export-csv --input-dta /absolute/path/to/data.dta --output /absol
 ## Common failure reasons
 
 - `stata-cli` is not installed or not on `PATH`
-- Stata 18 is not installed, or `--stata-path` points to the wrong location
+- Stata 19.5 is not installed, or `--stata-path` points to the wrong location
 - Stata was not found at `--stata-path`, `STATA_PATH`, or the macOS defaults (`/Applications/StataNow`, `/Applications/Stata`)
 - The target `.do` or `.dta` file path does not exist
 

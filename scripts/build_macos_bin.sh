@@ -31,4 +31,7 @@ fi
 
 cp "$target_binary" "$bin_dir/stata-cli"
 chmod +x "$bin_dir/stata-cli"
+if command -v codesign >/dev/null 2>&1; then
+  codesign -s - --force "$bin_dir/stata-cli"
+fi
 echo "[build_macos_bin] Updated $bin_dir/stata-cli"

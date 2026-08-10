@@ -20,7 +20,8 @@
 //! pointers or `extern "C"` calls. See README.md, "Unsafe FFI" section, for
 //! the design decision and risk notes.
 //!
-//! Notes on the ABI (reverse-engineered from Stata 18 MP, arm64):
+//! Notes on the ABI (reverse-engineered from Stata 18 MP and validated
+//! against Stata 19.5 MP, arm64):
 //!
 //! - `StataSO_Main(argc, argv)` initializes the engine. It accepts
 //!   `-pyexec <python>` to attach an embedded Python interpreter; when the

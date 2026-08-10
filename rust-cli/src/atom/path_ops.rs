@@ -135,7 +135,7 @@ pub(crate) fn absolutize_cli_path(path: &Path) -> Result<PathBuf> {
 }
 
 pub(crate) fn windows_default_stata_path() -> PathBuf {
-    PathBuf::from(r"C:\Program Files\Stata18")
+    PathBuf::from(r"C:\Program Files\Stata19")
 }
 
 pub(crate) fn repl_history_path() -> Option<PathBuf> {

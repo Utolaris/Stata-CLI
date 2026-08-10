@@ -57,6 +57,18 @@ Read only the files relevant to the task. Paths are relative to this `SKILL.md`.
 - `references/maximum-likelihood.md`
 - `references/gmm-estimation.md`
 
+### Stata 19 features (verified on Stata 19.5)
+
+- `references/panel-var-xtvar.md` — panel VAR (`xtvar`)
+- `references/high-dimensional-fixed-effects.md` — HDFE absorption in `areg`, `xtreg, fe`, `ivregress 2sls`
+- `references/cate.md` — conditional average treatment effects (`cate`)
+- `references/weak-instruments.md` — weak-instrument-robust inference (`estat weakrobust`)
+- `references/control-functions.md` — control-function models (`cfregress`, `cfprobit`)
+- `references/svar-with-iv.md` — SVAR via instruments (`ivsvar`)
+- `references/iv-local-projections.md` — IV local projections (`ivlpirf`)
+- `references/correlated-random-effects.md` — CRE model and Mundlak test (`xtreg, cre`, `estat mundlak`)
+- `references/gmm-xtinstruments.md` — GMM with panel-style instruments (`gmm ... xtinstruments()`)
+
 ### Causal inference and advanced methods
 
 - `references/difference-in-differences.md`

@@ -10,12 +10,12 @@ Stata 代码、`.do` 文件和 `.dta` 数据。**不再需要 Python、pystata �
 
 ## 安装
 
-### 1. 安装 Stata 18
+### 1. 安装 Stata 19.5
 
-请先安装 Stata 18。Windows 下建议使用默认路径：
+请先安装 Stata 19.5（或更新版本）。Windows 下建议使用默认路径：
 
 ```text
-C:\Program Files\Stata18
+C:\Program Files\Stata19
 ```
 
 如果 Stata 装在别的位置，可以通过 `--stata-path` 指定，或者在 CLI 配置里设置。
@@ -200,7 +200,7 @@ stata-cli data export-csv --input-dta /absolute/path/to/data.dta --output /absol
 ## 常见失败原因
 
 - `stata-cli` 没有安装，或者没有加入 `PATH`
-- 没有安装 Stata 18，或者 `--stata-path` 指向了错误的位置
+- 没有安装 Stata 19.5，或者 `--stata-path` 指向了错误的位置
 - 在 `--stata-path`、`STATA_PATH` 或 macOS 默认路径（`/Applications/StataNow`、`/Applications/Stata`）中找不到 Stata
 - 目标 `.do` 或 `.dta` 文件路径不存在
 
