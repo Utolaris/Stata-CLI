@@ -26,6 +26,25 @@ C:\Program Files\Stata18
 和 `boilerplate/` 放在同一个文件夹里，二进制与 init 模板一起分发，
 用户不需要克隆完整仓库。
 
+最快的安装方式是用官方 skills CLI，直接从本 GitHub 仓库拉取并安装到指定
+agent：
+
+```bash
+npx skills add utolaris/stata-cli \
+  --skill stata-cli \
+  --agent codex \
+  --agent claude-code \
+  --global \
+  --copy
+```
+
+`--global` 表示安装到用户级 skill 目录；`--copy` 表示复制文件而不是符号链接
+（skill 包内含二进制和模板，需要实体文件）。可以按需增删 `--agent` 行
+（支持 `claude-code`、`cursor`、`opencode` 等）。也可以从 GitHub Releases
+页面下载 `stata-cli.skill` 压缩包，解压后放进任意 agent 的 skill 文件夹。
+
+或者从仓库克隆后：
+
 ```bash
 ./scripts/install_skill.sh            # 安装到 ~/.codex/skills/stata-cli
 ./scripts/install_skill.sh --claude   # 同时安装到 ~/.claude/skills/stata-cli

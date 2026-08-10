@@ -26,6 +26,26 @@ The repo ships a self-contained skill folder at `skill/stata-cli/`: `SKILL.md`,
 `bin/`, and `boilerplate/` live in one folder, so the binary and the init
 templates travel together. Users do not need to clone the repository.
 
+The fastest way to install is the official skills CLI, which pulls the skill
+straight from this GitHub repo and installs it for the agents you choose:
+
+```bash
+npx skills add utolaris/stata-cli \
+  --skill stata-cli \
+  --agent codex \
+  --agent claude-code \
+  --global \
+  --copy
+```
+
+`--global` installs into your user-level skill folders; `--copy` copies the
+files instead of creating symlinks (important because the skill bundles a
+binary and templates). Add or drop `--agent` lines as needed (`claude-code`,
+`cursor`, `opencode`, ...). You can also grab the `stata-cli.skill` archive
+from the GitHub Releases page and unzip it into any agent's skill folder.
+
+Alternatively, from a clone of this repo:
+
 ```bash
 ./scripts/install_skill.sh            # installs into ~/.codex/skills/stata-cli
 ./scripts/install_skill.sh --claude   # also installs into ~/.claude/skills/stata-cli

@@ -76,7 +76,3 @@ Read only the 1-3 files relevant to the current task:
   `cargo build --release --manifest-path ../../rust-cli/Cargo.toml` (macOS) or
   `bash ../../scripts/build_windows_bin.sh` (Windows).
 
-## Platform notes
-
-The shipped `bin/stata-cli` is a prebuilt macOS arm64 binary. On other
-platforms, build from source or install a matching binary into `bin/`.
