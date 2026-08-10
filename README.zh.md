@@ -44,7 +44,7 @@ export PATH="/absolute/path/to/stata-cli/skill/stata-cli/bin:$PATH"
 
 如果你所在的平台还没有对应的 `bin/` 二进制，可以先本地构建，再复制进去：
 
-macOS / Linux：
+macOS：
 
 ```bash
 ./scripts/update_repo_bin.sh

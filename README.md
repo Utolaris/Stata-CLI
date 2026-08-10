@@ -46,7 +46,7 @@ Put that line in your shell config if you want it to persist.
 
 If you are on a platform that does not already have a matching binary in `skill/stata-cli/bin/`, build one locally and copy it there:
 
-macOS / Linux:
+macOS:
 
 ```bash
 ./scripts/update_repo_bin.sh

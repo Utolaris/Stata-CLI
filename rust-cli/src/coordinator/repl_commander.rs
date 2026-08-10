@@ -7,7 +7,7 @@ use crate::atom::progress_feedback::{
     spinner_interval, spinner_message,
 };
 use crate::atom::repl_formatting::{
-    format_repl_output, highlight_input_line, sanitize_repl_output,
+    format_repl_output, highlight_input_line, sanitize_repl_output, welcome_banner,
 };
 use crate::atom::stata_engine::StataEngine;
 use crate::molecule::native_backend::{
@@ -385,6 +385,15 @@ pub(crate) fn repl_command(cli: &Cli) -> Result<()> {
         helper.refresh_completion_cache();
     }
     clear_screen()?;
+    println!(
+        "{}",
+        welcome_banner(
+            env!("CARGO_PKG_VERSION"),
+            std::env::consts::OS,
+            std::env::consts::ARCH,
+            cli.stata_edition.as_deref().unwrap_or("mp"),
+        )
+    );
 
     let mut prompt = ". ";
     let mut buffer: Vec<String> = Vec::new();

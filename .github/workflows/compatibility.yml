@@ -5,6 +5,7 @@ on:
     paths-ignore:
       - "**/*.md"
       - "LICENSE"
+      - "skill/stata-cli/bin/**"
   pull_request:
     paths-ignore:
       - "**/*.md"
@@ -98,6 +99,15 @@ jobs:
         shell: zsh {0}
         run: bash ./scripts/build_macos_bin.sh
 
+      - name: Upload repo macOS binary
+        if: runner.os == 'macOS'
+        uses: actions/upload-artifact@v4
+        with:
+          name: stata-cli-macos
+          path: skill/stata-cli/bin/stata-cli
+          if-no-files-found: error
+          retention-days: 14
+
       - name: Install Zig for Windows cross-build check (macOS zsh)
         if: runner.os == 'macOS'
         shell: zsh {0}
@@ -121,3 +131,43 @@ jobs:
           path: skill/stata-cli/bin/stata-cli.exe
           if-no-files-found: error
           retention-days: 14
+
+  publish-binaries:
+    name: Publish skill binaries
+    if: github.event_name != 'pull_request'
+    needs: rust-checks
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Download Windows binary
+        uses: actions/download-artifact@v4
+        with:
+          name: stata-cli-windows-x86_64-gnu
+          path: artifacts/windows
+
+      - name: Download macOS binary
+        uses: actions/download-artifact@v4
+        with:
+          name: stata-cli-macos
+          path: artifacts/macos
+
+      - name: Copy binaries into skill bin directory
+        run: |
+          cp artifacts/windows/stata-cli.exe skill/stata-cli/bin/stata-cli.exe
+          cp artifacts/macos/stata-cli skill/stata-cli/bin/stata-cli
+          chmod +x skill/stata-cli/bin/stata-cli skill/stata-cli/bin/stata-cli.exe
+
+      - name: Commit refreshed binaries
+        run: |
+          if git diff --quiet skill/stata-cli/bin; then
+            echo "Binaries unchanged; nothing to commit."
+            exit 0
+          fi
+          git config user.name "stata-cli-ci"
+          git config user.email "stata-cli-ci@users.noreply.github.com"
+          git add skill/stata-cli/bin/stata-cli skill/stata-cli/bin/stata-cli.exe
+          git commit -m "build: refresh skill binaries from CI"
+          git push

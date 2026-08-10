@@ -537,11 +537,31 @@ pub(crate) fn format_repl_output(text: &str, colorize: bool) -> String {
     rendered
 }
 
+/// Python-style REPL welcome banner: reports the CLI version, the current
+/// platform environment, and how to get help or leave the REPL.
+pub(crate) fn welcome_banner(version: &str, os: &str, arch: &str, edition: &str) -> String {
+    format!(
+        "stata-cli {version} (native Rust engine, Stata {edition}) on {os}-{arch}\n\
+         Type \"help\" for command help, \"quit\" to exit."
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
-        format_repl_output, highlight_input_line, lex_stata_line, sanitize_repl_output, ReplClass,
+        format_repl_output, highlight_input_line, lex_stata_line, sanitize_repl_output,
+        welcome_banner, ReplClass,
     };
+
+    #[test]
+    fn welcome_banner_reports_version_environment_and_hints() {
+        let banner = welcome_banner("1.0.0", "windows", "x86_64", "mp");
+        assert!(banner.contains("stata-cli 1.0.0"));
+        assert!(banner.contains("windows-x86_64"));
+        assert!(banner.contains("Stata mp"));
+        assert!(banner.contains("\"help\""));
+        assert!(banner.contains("\"quit\""));
+    }
 
     #[test]
     fn lex_stata_line_highlights_basic_tokens() {

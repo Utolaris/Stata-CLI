@@ -367,17 +367,27 @@ fn resolve_library_path(stata_home: &Path, edition: &str) -> Result<PathBuf> {
     if !stata_home.is_dir() {
         bail!("Stata home is not a directory: {}", stata_home.display());
     }
-    #[cfg(target_os = "macos")]
-    let lib_path = stata_home
-        .join(format!("{app_name}.app"))
-        .join("Contents")
-        .join("MacOS")
-        .join(format!("libstata-{edition}.dylib"));
-    #[cfg(target_os = "windows")]
-    let lib_path = {
-        let _ = app_name;
-        stata_home.join(format!("{edition}-64.dll"))
-    };
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
+    {
+        #[cfg(target_os = "macos")]
+        let lib_path = stata_home
+            .join(format!("{app_name}.app"))
+            .join("Contents")
+            .join("MacOS")
+            .join(format!("libstata-{edition}.dylib"));
+        #[cfg(target_os = "windows")]
+        let lib_path = {
+            let _ = app_name;
+            stata_home.join(format!("{edition}-64.dll"))
+        };
+        if !lib_path.is_file() {
+            bail!(
+                "Stata shared library not found at {}. Check --stata-path / STATA_PATH.",
+                lib_path.display()
+            );
+        }
+        Ok(lib_path)
+    }
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     {
         let _ = app_name;
@@ -386,13 +396,6 @@ fn resolve_library_path(stata_home: &Path, edition: &str) -> Result<PathBuf> {
             std::env::consts::OS
         );
     }
-    if !lib_path.is_file() {
-        bail!(
-            "Stata shared library not found at {}. Check --stata-path / STATA_PATH.",
-            lib_path.display()
-        );
-    }
-    Ok(lib_path)
 }
 
 #[cfg(test)]
