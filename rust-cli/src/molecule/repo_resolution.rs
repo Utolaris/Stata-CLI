@@ -4,7 +4,6 @@ use crate::atom::path_ops::{default_config_path, normalize_repo_root};
 use anyhow::{bail, Result};
 use std::path::PathBuf;
 
-pub(crate) const COMPILED_REPO_ROOT: &str = env!("STATACLI_REPO_ROOT");
 pub(crate) const PROJECT_ROOT_ENV: &str = "STATA_CLI_PROJECT_ROOT";
 
 pub(crate) fn resolve_repo_root_from_executable() -> Option<PathBuf> {
@@ -50,14 +49,6 @@ pub(crate) fn resolve_repo_root() -> Result<RepoRootResolution> {
                 }
             }
         }
-    }
-
-    let compiled_root = PathBuf::from(COMPILED_REPO_ROOT);
-    if let Some(path) = normalize_repo_root(&compiled_root) {
-        return Ok(RepoRootResolution {
-            path,
-            source: "compiled fallback",
-        });
     }
 
     let config_hint = default_config_path()

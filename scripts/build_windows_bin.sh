@@ -3,7 +3,7 @@ set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 manifest_path="$repo_root/rust-cli/Cargo.toml"
-bin_dir="$repo_root/bin"
+bin_dir="$repo_root/skill/stata-cli/bin"
 target_triple="${WINDOWS_TARGET_TRIPLE:-x86_64-pc-windows-gnu}"
 target_binary="$repo_root/rust-cli/target/$target_triple/release/stata-cli.exe"
 cargo_bin="${CARGO_BIN:-}"

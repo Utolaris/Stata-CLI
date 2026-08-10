@@ -2,7 +2,7 @@
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-cli_bin="$repo_root/bin/stata-cli"
+cli_bin="$repo_root/skill/stata-cli/bin/stata-cli"
 
 if [[ -x "$cli_bin" ]]; then
   stata_cli=("$cli_bin")

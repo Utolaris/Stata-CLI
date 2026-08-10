@@ -1,4 +1,5 @@
 use crate::atom::json_contract::{DoctorCheck, DoctorReport, RepoRootResolution};
+use crate::atom::path_ops::normalize_for_external;
 use std::path::Path;
 
 pub(crate) fn repo_root_check(repo_root: &RepoRootResolution) -> DoctorCheck {
@@ -7,7 +8,7 @@ pub(crate) fn repo_root_check(repo_root: &RepoRootResolution) -> DoctorCheck {
         status: "ok",
         detail: format!(
             "{} (source: {})",
-            repo_root.path.display(),
+            normalize_for_external(&repo_root.path).display(),
             repo_root.source
         ),
     }
@@ -50,6 +51,34 @@ pub(crate) fn error_check(name: &'static str, detail: String) -> DoctorCheck {
         name,
         status: "error",
         detail,
+    }
+}
+
+pub(crate) fn warning_check(name: &'static str, detail: String) -> DoctorCheck {
+    DoctorCheck {
+        name,
+        status: "warn",
+        detail,
+    }
+}
+
+pub(crate) fn template_dir_check(template_dir: Option<&Path>) -> DoctorCheck {
+    match template_dir {
+        Some(path) => DoctorCheck {
+            name: "template_dir",
+            status: "ok",
+            detail: format!(
+                "Boilerplate templates found at {}",
+                normalize_for_external(path).display()
+            ),
+        },
+        None => DoctorCheck {
+            name: "template_dir",
+            status: "error",
+            detail: "Boilerplate template directory not found next to the binary. Reinstall the \
+                     stata-cli skill package or set STATA_CLI_TEMPLATE_DIR."
+                .to_string(),
+        },
     }
 }
 

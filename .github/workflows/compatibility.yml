@@ -15,7 +15,7 @@ env:
   # Integration/e2e tests that need a real Stata installation skip themselves
   # when this is set. CI runners have no licensed Stata, so the Rust unit tests
   # and pure-frontend integration tests are what run here.
-  SKIP_STATA_TESTS: "true"
+  SKIP_STATA_TESTS: "1"
 
 jobs:
 
@@ -63,40 +63,40 @@ jobs:
         shell: zsh {0}
         run: cargo fmt --manifest-path rust-cli/Cargo.toml --check
 
-      - name: Run Rust tests (Windows)
+      - name: Run Rust unit and integration tests (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
-        run: cargo test --manifest-path rust-cli/Cargo.toml --bins
+        run: cargo test --locked --manifest-path rust-cli/Cargo.toml
 
       - name: Run Clippy (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
-        run: cargo clippy --manifest-path rust-cli/Cargo.toml --all-targets -- -D warnings
+        run: cargo clippy --locked --manifest-path rust-cli/Cargo.toml --all-targets -- -D warnings
 
-      - name: Run Rust tests (macOS zsh)
+      - name: Run Rust unit and integration tests (macOS zsh)
         if: runner.os == 'macOS'
         shell: zsh {0}
-        run: cargo test --manifest-path rust-cli/Cargo.toml --bins
+        run: cargo test --locked --manifest-path rust-cli/Cargo.toml
 
       - name: Run Clippy (macOS zsh)
         if: runner.os == 'macOS'
         shell: zsh {0}
-        run: cargo clippy --manifest-path rust-cli/Cargo.toml --all-targets -- -D warnings
+        run: cargo clippy --locked --manifest-path rust-cli/Cargo.toml --all-targets -- -D warnings
 
       - name: Build native Rust CLI release binary (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
-        run: cargo build --release --manifest-path rust-cli/Cargo.toml
+        run: cargo build --locked --release --manifest-path rust-cli/Cargo.toml
+
+      - name: Smoke-test native Windows binary
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: '& ".\rust-cli\target\release\stata-cli.exe" --help'
 
       - name: Build repo macOS binary (macOS zsh)
         if: runner.os == 'macOS'
         shell: zsh {0}
         run: bash ./scripts/build_macos_bin.sh
-
-      - name: Run real scene smoke test (macOS zsh)
-        if: runner.os == 'macOS' && env.SKIP_STATA_TESTS != 'true'
-        shell: zsh {0}
-        run: bash ./scripts/run_scene_smoke.sh
 
       - name: Install Zig for Windows cross-build check (macOS zsh)
         if: runner.os == 'macOS'
@@ -112,3 +112,12 @@ jobs:
         if: runner.os == 'macOS'
         shell: zsh {0}
         run: bash ./scripts/build_windows_bin.sh
+
+      - name: Upload zig-built Windows binary
+        if: runner.os == 'macOS'
+        uses: actions/upload-artifact@v4
+        with:
+          name: stata-cli-windows-x86_64-gnu
+          path: skill/stata-cli/bin/stata-cli.exe
+          if-no-files-found: error
+          retention-days: 14

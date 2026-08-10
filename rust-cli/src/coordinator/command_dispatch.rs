@@ -2,11 +2,12 @@ use crate::atom::cli_contract::{Cli, Commands};
 use crate::atom::do_file_scan::{confirm_gui_command_execution, scan_do_file_for_gui_commands};
 use crate::atom::json_contract::DoctorCheck;
 use crate::atom::path_ops::{
-    absolutize_cli_path, default_config_path, validate_existing_working_dir,
+    absolutize_cli_path, default_config_path, resolve_template_dir, validate_existing_working_dir,
 };
 use crate::coordinator::repl_commander::repl_command;
 use crate::molecule::doctor_report::{
     config_file_check, engine_probe_ok_check, error_check, finalize_report, repo_root_check,
+    template_dir_check, warning_check,
 };
 use crate::molecule::native_backend::{
     data_export_csv_command, data_view_command, open_engine, run_file, run_selection, FilterOptions,
@@ -39,8 +40,26 @@ pub(crate) fn run() -> Result<()> {
     }
 
     if matches!(cli.command, Commands::Init) {
-        let repo_root = resolve_repo_root()?;
-        return init_command(&repo_root.path);
+        return init_command();
+    }
+
+    // Validate command-local inputs before any Stata resolution so Windows
+    // machines without a Stata installation still get clear local errors
+    // (and the GUI-command guard never waits on an unavailable engine).
+    match &cli.command {
+        Commands::Run { .. } => {
+            if let Some(working_dir) = &cli.working_dir {
+                validate_existing_working_dir(working_dir)?;
+            }
+        }
+        Commands::File { path, .. } => {
+            let resolved_path = absolutize_cli_path(path)?;
+            let gui_hits = scan_do_file_for_gui_commands(&resolved_path)?;
+            if !gui_hits.is_empty() && !confirm_gui_command_execution(&resolved_path, &gui_hits)? {
+                anyhow::bail!("Execution cancelled by user after GUI command warning");
+            }
+        }
+        _ => {}
     }
 
     let resolved_stata_path = resolve_effective_stata_path(&cli)?;
@@ -80,10 +99,6 @@ pub(crate) fn run() -> Result<()> {
         } => {
             let mut file_cli = effective_cli.clone();
             let resolved_path = absolutize_cli_path(path)?;
-            let gui_hits = scan_do_file_for_gui_commands(&resolved_path)?;
-            if !gui_hits.is_empty() && !confirm_gui_command_execution(&resolved_path, &gui_hits)? {
-                anyhow::bail!("Execution cancelled by user after GUI command warning");
-            }
             if session_id.is_some() {
                 file_cli.session_id = session_id.clone();
             }
@@ -165,8 +180,12 @@ fn doctor_command(cli: &Cli) -> Result<()> {
 
     match resolve_repo_root() {
         Ok(repo_root) => checks.push(repo_root_check(&repo_root)),
-        Err(error) => checks.push(error_check("repo_root", error.to_string())),
+        Err(error) => checks.push(warning_check(
+            "repo_root",
+            format!("Project root not found (non-blocking): {error}"),
+        )),
     }
+    checks.push(template_dir_check(resolve_template_dir().as_deref()));
     checks.push(config_file_check(config_path.as_deref()));
 
     // Probe the native engine: load libstata-*.dylib and run `display 1+1`.

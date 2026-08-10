@@ -9,12 +9,12 @@ Usage:
   ./scripts/update_repo_bin.sh [macos|windows|all]
 
 Default behavior:
-  - macOS/Linux hosts: build the local macOS binary into bin/
-  - Windows-like hosts: build the local Windows binary into bin/
+  - macOS/Linux hosts: build the local macOS binary into skill/stata-cli/bin
+  - Windows-like hosts: build the local Windows binary into skill/stata-cli/bin
 
 Explicit targets:
-  macos    Build the repo-local macOS binary with cargo build --release
-  windows  Build the repo-local Windows binary with cargo zigbuild
+  macos    Build the repo-local macOS binary into skill/stata-cli/bin
+  windows  Build the repo-local Windows binary into skill/stata-cli/bin
   all      Build both repo-local binaries
 EOF
 }

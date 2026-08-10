@@ -4,22 +4,26 @@
 //! Output capture drains Stata's own output buffer after every execution, so
 //! it cannot be broken by user `log`/`capture` commands; `log_file` results
 //! are written by Rust from the captured output. Data previews are driven by
-//! Stata metadata (see `molecule::data_preview`).
+//! Stata metadata (see `data_preview`).
+
+mod data_preview;
 
 use crate::atom::cli_contract::Cli;
 use crate::atom::json_contract::{CompletionContextResult, ExecutionResult, PartialFailure};
 use crate::atom::output_filtering::{process_file_output, process_output};
 use crate::atom::partial_failure::parse_partial_failures;
 use crate::atom::path_ops::{
-    expand_user, get_log_file_path, resolve_do_file_path, resolve_output_path,
+    expand_user, get_log_file_path, normalize_for_external, resolve_do_file_path,
+    resolve_output_path,
 };
+use crate::atom::smcl_text::render_smcl_to_text;
 use crate::atom::stata_engine::StataEngine;
 use crate::atom::stata_syntax::{
-    blocked_interactive_prefix, build_selection_for_working_dir, help_topic_guidance,
-    sanitize_session_id, stata_quote_path,
+    blocked_interactive_prefix, build_selection_for_working_dir, clean_help_topic,
+    help_guidance_message, parse_single_command, sanitize_session_id, stata_quote_path,
 };
-use crate::molecule::data_preview::{get_data, simple_variable_names};
-use anyhow::{bail, Context, Result};
+use anyhow::{bail, Result};
+use data_preview::{get_data, simple_variable_names};
 use serde_json::{json, Value};
 use std::env;
 use std::fs;
@@ -103,7 +107,7 @@ pub(crate) fn resolve_stata_home(cli: &Cli) -> Result<PathBuf> {
 }
 
 fn canonicalize_or(path: &Path) -> Result<PathBuf> {
-    fs::canonicalize(path).with_context(|| format!("Failed to resolve {}", path.display()))
+    Ok(normalize_for_external(path))
 }
 
 pub(crate) fn open_engine(cli: &Cli) -> Result<StataEngine> {
@@ -168,10 +172,20 @@ pub(crate) fn execute_file(
         .unwrap_or_else(|| log_file.parent().map(PathBuf::from).unwrap_or_default())
         .display()
         .to_string();
+    let quoted_do_dir = match stata_quote_path(&do_dir) {
+        Ok(quoted) => quoted,
+        Err(error) => {
+            return ExecuteOutcome {
+                output: format!("failed to quote working directory: {error:#}"),
+                rc: -1,
+                cancelled: false,
+            };
+        }
+    };
     let wrapped = format!(
         "set seed {}\ncd {}\n{code}\n",
         StataEngine::fresh_seed(),
-        stata_quote_path(&do_dir)
+        quoted_do_dir
     );
     let result = engine.run_block(&wrapped);
     let output = crate::atom::output_filtering::deduplicate_break_messages(&result.output);
@@ -223,20 +237,18 @@ pub(crate) fn run_selection(
             session_id,
         );
     }
-    if let Some(guidance) = help_topic_guidance(selection, repo_root) {
-        return ExecutionResult {
-            status: "success".to_string(),
-            output: guidance,
-            session_id: Some(presented_session_id(session_id)),
-            log_file: None,
-            graphs: Vec::new(),
-            partial_failures: Vec::new(),
-            partial_failure_count: 0,
-            error: None,
-        };
+    if let Some(result) =
+        help_or_window_command_result(engine, selection, session_id, repo_root, filter)
+    {
+        return result;
     }
 
-    let code = build_selection_for_working_dir(selection, working_dir);
+    let code = match build_selection_for_working_dir(selection, working_dir) {
+        Ok(code) => code,
+        Err(error) => {
+            return render_error(&format!("{error:#}"), session_id);
+        }
+    };
     let seed_prefix = engine.seed_prefix();
     let outcome = execute_code(engine, &code, &seed_prefix);
     let raw = outcome.output;
@@ -258,6 +270,97 @@ pub(crate) fn run_selection(
         partial_failures: Vec::new(),
         partial_failure_count: 0,
         error,
+    }
+}
+
+/// Build the Stata block that resolves a help topic to its `.sthlp` file.
+/// `findfile` searches the whole ado-path (base + user PLUS directories) and
+/// leaves the resolved path in `r(fn)`; the marker line makes parsing robust
+/// against command echoes.
+fn help_findfile_block(topic: &str) -> String {
+    format!("findfile {topic}.sthlp\ndisplay \"STATA_CLI_HELP_PATH=[`r(fn)']\"")
+}
+
+fn parse_help_path(output: &str) -> Option<PathBuf> {
+    const MARKER: &str = "STATA_CLI_HELP_PATH=[";
+    for line in output.lines() {
+        let trimmed = line.trim_start();
+        if trimmed.starts_with(". ") || trimmed.starts_with("> ") {
+            continue; // Stata command echoes carry the marker text too
+        }
+        if let Some(start) = line.find(MARKER) {
+            let rest = &line[start + MARKER.len()..];
+            if let Some(end) = rest.find(']') {
+                let path = rest[..end].trim();
+                if !path.is_empty() && !path.contains('`') && !path.contains('\'') {
+                    return Some(PathBuf::from(path));
+                }
+            }
+        }
+    }
+    None
+}
+
+fn success_result(output: String, session_id: Option<&str>) -> ExecutionResult {
+    ExecutionResult {
+        status: "success".to_string(),
+        output,
+        session_id: Some(presented_session_id(session_id)),
+        log_file: None,
+        graphs: Vec::new(),
+        partial_failures: Vec::new(),
+        partial_failure_count: 0,
+        error: None,
+    }
+}
+
+/// Intercept single-line `help`/`search`/`findit` selections. `help <topic>`
+/// renders the real local Stata help text; the window-only commands and
+/// unresolvable help topics return guidance instead of silently producing
+/// nothing.
+fn help_or_window_command_result(
+    engine: &StataEngine,
+    selection: &str,
+    session_id: Option<&str>,
+    repo_root: Option<&Path>,
+    filter: &FilterOptions,
+) -> Option<ExecutionResult> {
+    let (command, args) = parse_single_command(selection)?;
+    let workspace = std::env::current_dir().ok();
+    match command.as_str() {
+        "search" | "findit" => Some(success_result(
+            help_guidance_message(&command, None, workspace.as_deref(), repo_root),
+            session_id,
+        )),
+        "help" => {
+            let raw_topic = args.join(" ").trim().to_string();
+            let topic = clean_help_topic(&raw_topic);
+            if topic.is_empty() {
+                return Some(success_result(
+                    help_guidance_message("help", None, workspace.as_deref(), repo_root),
+                    session_id,
+                ));
+            }
+
+            let probe = execute_code(engine, &help_findfile_block(&topic), &engine.seed_prefix());
+            if probe.rc == 0 && !probe.cancelled {
+                if let Some(path) = parse_help_path(&probe.output) {
+                    if let Ok(smcl) = fs::read_to_string(&path) {
+                        let text = render_smcl_to_text(&smcl);
+                        if !text.trim().is_empty() {
+                            engine.mark_seed_done();
+                            return Some(success_result(filter.apply(&text, false), session_id));
+                        }
+                    }
+                }
+            }
+
+            Some(success_result(
+                help_guidance_message("help", Some(&topic), workspace.as_deref(), repo_root),
+                session_id,
+            ))
+        }
+        _ => None,
     }
 }
 
@@ -354,13 +457,25 @@ pub(crate) fn data_view_command(
                 "message": format!("Input DTA file not found: {}", input_path.display())
             });
         }
-        let load_code = build_selection_for_working_dir(
-            &format!(
-                "use {}, clear",
-                stata_quote_path(&input_path.display().to_string())
-            ),
-            None,
-        );
+        let quoted_input = match stata_quote_path(&input_path.display().to_string()) {
+            Ok(quoted) => quoted,
+            Err(error) => {
+                return json!({
+                    "status": "error",
+                    "message": format!("Failed to quote input path: {error:#}")
+                });
+            }
+        };
+        let load_code =
+            match build_selection_for_working_dir(&format!("use {quoted_input}, clear"), None) {
+                Ok(code) => code,
+                Err(error) => {
+                    return json!({
+                        "status": "error",
+                        "message": format!("{error:#}")
+                    });
+                }
+            };
         let load_result = run_selection(engine, &load_code, None, None, repo_root, filter);
         if load_result.status != "success" {
             return json!({
@@ -432,16 +547,36 @@ pub(crate) fn data_export_csv_command(
                 "message": format!("Input DTA file not found: {}", input_path.display())
             });
         }
-        commands.push(format!(
-            "use {}, clear",
-            stata_quote_path(&input_path.display().to_string())
-        ));
+        let quoted_input = match stata_quote_path(&input_path.display().to_string()) {
+            Ok(quoted) => quoted,
+            Err(error) => {
+                return json!({
+                    "status": "error",
+                    "message": format!("Failed to quote input path: {error:#}")
+                });
+            }
+        };
+        commands.push(format!("use {quoted_input}, clear"));
     }
-    commands.push(format!(
-        "export delimited using {}, replace",
-        stata_quote_path(&output_path.display().to_string())
-    ));
-    let code = build_selection_for_working_dir(&commands.join("\n"), working_dir);
+    let quoted_output = match stata_quote_path(&output_path.display().to_string()) {
+        Ok(quoted) => quoted,
+        Err(error) => {
+            return json!({
+                "status": "error",
+                "message": format!("Failed to quote output path: {error:#}")
+            });
+        }
+    };
+    commands.push(format!("export delimited using {quoted_output}, replace"));
+    let code = match build_selection_for_working_dir(&commands.join("\n"), working_dir) {
+        Ok(code) => code,
+        Err(error) => {
+            return json!({
+                "status": "error",
+                "message": format!("{error:#}")
+            });
+        }
+    };
     let seed_prefix = engine.seed_prefix();
     let outcome = execute_code(engine, &code, &seed_prefix);
     let raw = outcome.output.replace("\\n", "\n");
@@ -550,5 +685,26 @@ mod tests {
     #[test]
     fn join_continuations_helper_is_reachable() {
         assert_eq!(join_stata_line_continuations("a ///\nb"), "a b");
+    }
+
+    #[test]
+    fn parses_help_path_marker() {
+        let output = "\n. findfile regress.sthlp\n/Applications/Stata/ado/base/r/regress.sthlp\n\n. display \"STATA_CLI_HELP_PATH=[`r(fn)']\"\nSTATA_CLI_HELP_PATH=[/Applications/Stata/ado/base/r/regress.sthlp]\n\n. ";
+        assert_eq!(
+            parse_help_path(output),
+            Some(PathBuf::from(
+                "/Applications/Stata/ado/base/r/regress.sthlp"
+            ))
+        );
+        assert_eq!(parse_help_path("no marker here"), None);
+        assert_eq!(parse_help_path("STATA_CLI_HELP_PATH=[]"), None);
+    }
+
+    #[test]
+    fn help_findfile_block_uses_cleaned_topic() {
+        assert_eq!(
+            help_findfile_block("regress"),
+            "findfile regress.sthlp\ndisplay \"STATA_CLI_HELP_PATH=[`r(fn)']\""
+        );
     }
 }

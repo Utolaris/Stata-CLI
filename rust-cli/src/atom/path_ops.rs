@@ -22,13 +22,83 @@ pub(crate) fn default_config_path() -> Option<PathBuf> {
 }
 
 pub(crate) fn boilerplate_dir(repo_root: &Path) -> PathBuf {
-    repo_root.join("boilerplate")
+    repo_root
+        .join("skill")
+        .join("stata-cli")
+        .join("boilerplate")
+}
+
+pub(crate) const TEMPLATE_DIR_ENV: &str = "STATA_CLI_TEMPLATE_DIR";
+
+/// Candidate template locations relative to the binary directory. The skill
+/// package keeps `bin/` and `boilerplate/` as siblings
+/// (`<skill>/bin/stata-cli` next to `<skill>/boilerplate`), and a copy next
+/// to the binary itself is accepted as a fallback for local builds.
+pub(crate) fn template_dir_candidates(exe_dir: &Path) -> Vec<PathBuf> {
+    vec![
+        exe_dir.join("..").join("boilerplate"),
+        exe_dir.join("boilerplate"),
+    ]
+}
+
+pub(crate) fn first_existing_dir(candidates: &[PathBuf]) -> Option<PathBuf> {
+    candidates
+        .iter()
+        .find(|candidate| candidate.is_dir())
+        .cloned()
+}
+
+fn canonicalize_or_keep(path: PathBuf) -> PathBuf {
+    fs::canonicalize(&path).unwrap_or(path)
+}
+
+/// Resolve the init template directory: `STATA_CLI_TEMPLATE_DIR` > locations
+/// relative to the executable > legacy repository-root discovery (dev
+/// checkouts). The binary no longer depends on a cloned repository.
+pub(crate) fn resolve_template_dir() -> Option<PathBuf> {
+    if let Some(value) = env::var_os(TEMPLATE_DIR_ENV) {
+        let candidate = PathBuf::from(value);
+        if candidate.is_dir() {
+            return Some(canonicalize_or_keep(candidate));
+        }
+    }
+
+    if let Ok(exe) = env::current_exe() {
+        if let Some(exe_dir) = exe.parent() {
+            if let Some(found) = first_existing_dir(&template_dir_candidates(exe_dir)) {
+                return Some(canonicalize_or_keep(found));
+            }
+        }
+    }
+
+    if let Ok(cwd) = env::current_dir() {
+        if let Some(repo_root) = discover_repo_root_from(&cwd) {
+            let candidate = boilerplate_dir(&repo_root);
+            if candidate.is_dir() {
+                return Some(canonicalize_or_keep(candidate));
+            }
+        }
+    }
+    if let Ok(exe) = env::current_exe() {
+        if let Some(repo_root) = discover_repo_root_from(&exe) {
+            let candidate = boilerplate_dir(&repo_root);
+            if candidate.is_dir() {
+                return Some(canonicalize_or_keep(candidate));
+            }
+        }
+    }
+
+    None
 }
 
 pub(crate) fn is_repo_root(path: &Path) -> bool {
     path.join("rust-cli").join("Cargo.toml").exists()
-        && path.join("boilerplate").is_dir()
-        && path.join("bin").is_dir()
+        && path
+            .join("skill")
+            .join("stata-cli")
+            .join("boilerplate")
+            .is_dir()
+        && path.join("skill").join("stata-cli").join("bin").is_dir()
 }
 
 pub(crate) fn discover_repo_root_from(start: &Path) -> Option<PathBuf> {
@@ -150,9 +220,7 @@ pub(crate) fn resolve_do_file_path(file_path: &Path) -> (Option<PathBuf>, Vec<St
 
     let mut seen = std::collections::HashSet::new();
     for candidate in candidates {
-        let normalized = candidate
-            .canonicalize()
-            .unwrap_or_else(|_| candidate.clone());
+        let normalized = normalize_for_external(&candidate);
         if !seen.insert(normalized.clone()) {
             continue;
         }
@@ -207,19 +275,82 @@ pub(crate) fn expand_user(path: &Path) -> PathBuf {
 
 /// Expand a leading `~/` only; does not resolve relative paths.
 fn expand_tilde(path: &Path) -> PathBuf {
-    let rendered = path.to_string_lossy();
-    if let Some(rest) = rendered.strip_prefix("~/") {
-        if let Ok(home) = env::var("HOME") {
-            return PathBuf::from(home).join(rest);
-        }
+    let mut components = path.components();
+    if !matches!(
+        components.next(),
+        Some(std::path::Component::Normal(name)) if name == "~"
+    ) {
+        return path.to_path_buf();
+    }
+    if let Some(home) = home_dir() {
+        let rest: PathBuf = components.collect();
+        return home.join(rest);
     }
     path.to_path_buf()
+}
+
+/// Canonicalize a path for passing to external tools (Stata, logs, output
+/// files). Rust's `fs::canonicalize` on Windows returns `\\?\`-prefixed
+/// extended-length paths that many external programs reject, so the verbatim
+/// prefix is stripped there. Internal identity checks may keep using the raw
+/// canonical form; this is the Stata-facing form.
+pub(crate) fn normalize_for_external(path: &Path) -> PathBuf {
+    let canonical = fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+    #[cfg(target_os = "windows")]
+    {
+        let rendered = canonical.to_string_lossy();
+        if let Some(rest) = rendered.strip_prefix(r"\\?\") {
+            if let Some(unc) = rest.strip_prefix("UNC\\") {
+                return PathBuf::from(format!(r"\\{unc}"));
+            }
+            return PathBuf::from(rest);
+        }
+    }
+    canonical
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use tempfile::tempdir;
+
+    #[test]
+    fn template_dir_candidates_check_sibling_then_local() {
+        let temp = tempdir().unwrap();
+        let exe_dir = temp.path().join("bin");
+        let candidates = template_dir_candidates(&exe_dir);
+        assert_eq!(
+            candidates,
+            vec![
+                exe_dir.join("..").join("boilerplate"),
+                exe_dir.join("boilerplate")
+            ]
+        );
+    }
+
+    #[test]
+    fn first_existing_dir_picks_first_directory() {
+        let temp = tempdir().unwrap();
+        let missing = temp.path().join("missing");
+        let present = temp.path().join("present");
+        fs::create_dir_all(&present).unwrap();
+        assert_eq!(
+            first_existing_dir(&[missing.clone(), present.clone()]),
+            Some(present)
+        );
+        assert_eq!(first_existing_dir(&[missing]), None);
+    }
+
+    #[test]
+    fn resolve_template_dir_prefers_env_override() {
+        let temp = tempdir().unwrap();
+        let template = temp.path().join("boilerplate");
+        fs::create_dir_all(&template).unwrap();
+        std::env::set_var(TEMPLATE_DIR_ENV, &template);
+        let resolved = resolve_template_dir().unwrap();
+        std::env::remove_var(TEMPLATE_DIR_ENV);
+        assert_eq!(resolved, fs::canonicalize(template).unwrap());
+    }
 
     #[test]
     fn relative_do_file_search_reaches_two_levels_but_not_three() {
@@ -242,6 +373,85 @@ mod tests {
             found,
             Some(fs::canonicalize(level2.join("target.do")).unwrap())
         );
-        assert!(tried.iter().any(|p| p.contains("a/b/target.do")));
+        let expected_suffix = Path::new("a").join("b").join("target.do");
+        assert!(
+            tried
+                .iter()
+                .any(|p| Path::new(p).ends_with(&expected_suffix)),
+            "tried paths: {tried:?}"
+        );
+    }
+
+    #[test]
+    fn expands_tilde_from_home_directory() {
+        let temp = tempdir().unwrap();
+        let old_home = std::env::var_os("HOME");
+        let old_profile = std::env::var_os("USERPROFILE");
+        std::env::set_var("HOME", temp.path());
+        std::env::set_var("USERPROFILE", temp.path());
+        let expanded = expand_user(Path::new("~/data/input.dta"));
+        if let Some(value) = old_home {
+            std::env::set_var("HOME", value);
+        } else {
+            std::env::remove_var("HOME");
+        }
+        if let Some(value) = old_profile {
+            std::env::set_var("USERPROFILE", value);
+        } else {
+            std::env::remove_var("USERPROFILE");
+        }
+        assert_eq!(expanded, temp.path().join("data").join("input.dta"));
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn windows_tilde_expands_from_userprofile() {
+        let temp = tempdir().unwrap();
+        let old_home = std::env::var_os("HOME");
+        let old_profile = std::env::var_os("USERPROFILE");
+        std::env::remove_var("HOME");
+        std::env::set_var("USERPROFILE", temp.path());
+        let expanded = expand_user(Path::new(r"~\data\input.dta"));
+        if let Some(value) = old_home {
+            std::env::set_var("HOME", value);
+        } else {
+            std::env::remove_var("HOME");
+        }
+        if let Some(value) = old_profile {
+            std::env::set_var("USERPROFILE", value);
+        } else {
+            std::env::remove_var("USERPROFILE");
+        }
+        assert_eq!(expanded, temp.path().join("data").join("input.dta"));
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn windows_external_path_has_no_verbatim_prefix() {
+        let temp = tempdir().unwrap();
+        let normalized = normalize_for_external(temp.path());
+        assert!(
+            !normalized.to_string_lossy().starts_with(r"\\?\"),
+            "{}",
+            normalized.display()
+        );
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn windows_config_and_history_share_appdata_root() {
+        let temp = tempdir().unwrap();
+        let old = std::env::var_os("APPDATA");
+        std::env::set_var("APPDATA", temp.path());
+        let config = default_config_path().unwrap();
+        let history = repl_history_path().unwrap();
+        if let Some(value) = old {
+            std::env::set_var("APPDATA", value);
+        } else {
+            std::env::remove_var("APPDATA");
+        }
+        let expected = temp.path().join("stata-cli");
+        assert_eq!(config.parent().unwrap(), expected);
+        assert_eq!(history.parent().unwrap(), expected);
     }
 }

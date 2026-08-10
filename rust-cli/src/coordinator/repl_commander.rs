@@ -308,19 +308,31 @@ fn print_result(result: &ExecutionResult, colorize: bool) {
     }
 }
 
+/// Build the ANSI rewrite that replaces the just-submitted input block with
+/// colored status prompts. A bracketed paste arrives as one readline result
+/// containing embedded newlines, so every displayed line is rewritten
+/// individually (first line gets `.`, continuations get `>`).
+fn submitted_prompt_rewrites(lines: &[String], success: bool, colorize: bool) -> String {
+    let mut rewrite = String::new();
+    let flat: Vec<&str> = lines.iter().flat_map(|line| line.lines()).collect();
+    let line_count = flat.len();
+    for (index, line) in flat.iter().enumerate() {
+        let distance_from_bottom = line_count - index;
+        let prefix = if index == 0 { "." } else { ">" };
+        let rendered_line = highlight_input_line(line, colorize);
+        rewrite.push_str(&format!(
+            "\x1b[{distance_from_bottom}A\r\x1b[2K{}\x1b[{distance_from_bottom}B\r",
+            prompt_status_line(prefix, &rendered_line, success, colorize)
+        ));
+    }
+    rewrite
+}
+
 fn mark_submitted_prompts(lines: &[String], success: bool, colorize: bool) -> io::Result<()> {
     if !colorize || lines.is_empty() {
         return Ok(());
     }
-
-    for (index, line) in lines.iter().enumerate() {
-        let distance_from_bottom = lines.len() - index;
-        let prefix = if index == 0 { "." } else { ">" };
-        print!(
-            "\x1b[{distance_from_bottom}A\r\x1b[2K{}\x1b[{distance_from_bottom}B\r",
-            prompt_status_line(prefix, line, success, colorize)
-        );
-    }
+    print!("{}", submitted_prompt_rewrites(lines, success, colorize));
     io::stdout().flush()
 }
 
@@ -384,7 +396,7 @@ pub(crate) fn repl_command(cli: &Cli) -> Result<()> {
                 if buffer.is_empty() && stripped.is_empty() {
                     continue;
                 }
-                if buffer.is_empty() && stripped == ":exit" {
+                if buffer.is_empty() && (stripped == "quit" || stripped == ":exit") {
                     break;
                 }
                 if !line.trim().is_empty() {
@@ -447,4 +459,39 @@ pub(crate) fn repl_command(cli: &Cli) -> Result<()> {
     save_history(&mut editor);
     bridge.lock().expect("bridge mutex poisoned").shutdown()?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::submitted_prompt_rewrites;
+
+    #[test]
+    fn single_line_rewrite_keeps_syntax_highlighting() {
+        let lines = vec!["display 2+2".to_string()];
+        let rewrite = submitted_prompt_rewrites(&lines, true, true);
+        assert!(rewrite.contains("\x1b[1A\r\x1b[2K"));
+        assert!(rewrite.contains("\x1b[1;32m.\x1b[0m"));
+        assert!(rewrite.contains("\x1b[1;35mdisplay\x1b[0m"));
+        assert!(rewrite.contains("\x1b[1B\r"));
+    }
+
+    #[test]
+    fn multi_line_paste_rewrites_each_line_with_prefixes() {
+        let lines = vec!["use data.dta, clear\nsummarize lnw".to_string()];
+        let rewrite = submitted_prompt_rewrites(&lines, true, true);
+        assert!(rewrite.contains("\x1b[2A\r\x1b[2K"));
+        assert!(rewrite.contains("\x1b[1A\r\x1b[2K"));
+        assert!(rewrite.contains(".\x1b[0m "));
+        assert!(rewrite.contains(">\x1b[0m "));
+        assert!(rewrite.contains("summarize"));
+    }
+
+    #[test]
+    fn rewrite_is_plain_when_not_colorizing() {
+        let lines = vec!["display 2+2".to_string()];
+        let rewrite = submitted_prompt_rewrites(&lines, true, false);
+        assert!(!rewrite.contains("\x1b[1;"));
+        assert!(!rewrite.contains("\x1b[0m"));
+        assert!(rewrite.contains(". display 2+2"));
+    }
 }

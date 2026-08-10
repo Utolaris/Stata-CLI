@@ -30,8 +30,8 @@ mod tests {
             "[package]\nname = 'stata-cli'\n",
         )
         .unwrap();
-        fs::create_dir_all(dir.join("boilerplate")).unwrap();
-        fs::create_dir_all(dir.join("bin")).unwrap();
+        fs::create_dir_all(dir.join("skill").join("stata-cli").join("boilerplate")).unwrap();
+        fs::create_dir_all(dir.join("skill").join("stata-cli").join("bin")).unwrap();
     }
 
     fn windows_like_cli() -> Cli {
@@ -210,7 +210,7 @@ mod tests {
         let temp = tempdir().unwrap();
         let repo = temp.path().join("stata-cli");
         make_repo(&repo);
-        let bin = repo.join("bin");
+        let bin = repo.join("skill").join("stata-cli").join("bin");
         fs::create_dir_all(&bin).unwrap();
         let fake_exe = if cfg!(windows) {
             bin.join("stata-cli.exe")

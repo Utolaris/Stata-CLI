@@ -292,3 +292,15 @@ xtabond2 n L.n w k, gmm(L.(n w k)) iv(yr1980-yr1984) robust
 4. Always use robust or clustered standard errors
 5. For dynamic models, check AR(2) and Sargan/Hansen tests
 6. Report: model type, N obs, N groups, R-squared (within/between/overall), SE type, diagnostic tests
+
+## Panel Diagnostics (user-written)
+
+- `xttest3` - Modified Wald test for groupwise heteroskedasticity in fixed-effects models
+  (install with `ssc install xttest3`; run after `xtreg, fe`)
+- `xtcsd` - Cross-sectional dependence tests (Pesaran CD, Friedman, Frees) for panels
+  (install with `ssc install xtcsd`)
+- `xtserial` - Wooldridge test for first-order serial correlation in panels
+  (install with `ssc install xtserial`; run after `xtreg`)
+
+For Bacon decomposition and other modern difference-in-differences diagnostics, see
+`packages/event-study.md` and `references/difference-in-differences.md`.

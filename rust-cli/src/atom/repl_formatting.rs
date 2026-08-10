@@ -428,24 +428,24 @@ pub(crate) fn sanitize_repl_output(text: &str) -> String {
             pending_separator = false;
             continue;
         }
+        if line.starts_with(". ") || line.starts_with("> ") {
+            pending_separator = false;
+            continue;
+        }
         if stripped.starts_with(". quietly set seed ")
             || stripped.starts_with(". capture log close")
         {
             pending_separator = false;
             continue;
         }
-        if stripped.starts_with(". ") || stripped.starts_with("> ") {
-            pending_separator = false;
-            continue;
-        }
-        if stripped.starts_with("> ")
+        if line.starts_with("> ")
             && cleaned
                 .last()
                 .map(|last| last.starts_with(". "))
                 .unwrap_or(false)
         {
             if let Some(last) = cleaned.last_mut() {
-                *last = format!("{last} {}", stripped[2..].trim_start());
+                *last = format!("{last} {}", line[2..].trim_start());
             }
             continue;
         }
@@ -581,6 +581,19 @@ mod tests {
         assert!(!cleaned.contains(". cd /tmp/project"));
         assert!(!cleaned.contains("> legend(off)"));
         assert_eq!(cleaned.trim(), "/tmp/project");
+    }
+
+    #[test]
+    fn sanitize_repl_output_strips_trailing_stata_prompt_echo() {
+        // The engine output ends with Stata's own prompt echo (". " with a
+        // trailing space); it must not leak into the REPL output as a phantom
+        // line.
+        let raw_output = "4\n\n. ";
+        assert_eq!(sanitize_repl_output(raw_output), "4");
+        let raw_output = "summarize lnw\n\n    Variable |        Obs        Mean\n. ";
+        let cleaned = sanitize_repl_output(raw_output);
+        assert!(cleaned.ends_with("Mean"));
+        assert!(!cleaned.contains(". "));
     }
 
     #[test]

@@ -10,3 +10,6 @@ cargo fmt --manifest-path rust-cli/Cargo.toml --check
 
 echo "[run_repo_checks] Rust tests"
 cargo test --manifest-path rust-cli/Cargo.toml
+
+echo "[run_repo_checks] Clippy (-D warnings)"
+cargo clippy --manifest-path rust-cli/Cargo.toml --all-targets -- -D warnings

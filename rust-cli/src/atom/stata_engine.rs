@@ -36,6 +36,7 @@
 
 #![allow(unsafe_code)]
 
+use crate::atom::stata_syntax::stata_quote_path;
 use anyhow::{bail, Context, Result};
 use libloading::{Library, Symbol};
 use std::ffi::{CStr, CString};
@@ -118,6 +119,17 @@ impl StataEngine {
                  Stata uses process-wide global state; run parallel sessions in separate processes."
             );
         }
+        let engine = Self::init(stata_home, edition);
+        if engine.is_err() {
+            // Nothing below has committed: the library is not loaded yet, so
+            // the process-level singleton guard must be released or a later
+            // retry would be blocked forever by this failed attempt.
+            ENGINE_ACTIVE.store(false, Ordering::SeqCst);
+        }
+        engine
+    }
+
+    fn init(stata_home: &Path, edition: &str) -> Result<Self> {
         let lib_path = resolve_library_path(stata_home, edition)?;
         std::env::set_var("SYSDIR_STATA", stata_home);
         // Stata MP links its own OpenMP runtime; keep it from colliding with
@@ -247,7 +259,16 @@ impl StataEngine {
                 output: format!("failed to write temporary do-file: {error}"),
             };
         }
-        let include_cmd = format!("include \"{}\"", do_file.display());
+        let include_cmd = match stata_quote_path(&do_file.display().to_string()) {
+            Ok(quoted) => format!("include {quoted}"),
+            Err(error) => {
+                let _ = fs::remove_file(&do_file);
+                return StataOutput {
+                    rc: -1,
+                    output: format!("failed to quote temporary do-file path: {error}"),
+                };
+            }
+        };
         let result = self.execute(&include_cmd);
         let _ = fs::remove_file(&do_file);
         result
@@ -336,26 +357,35 @@ fn seed_hash() -> u64 {
 }
 
 fn resolve_library_path(stata_home: &Path, edition: &str) -> Result<PathBuf> {
-    if !cfg!(target_os = "macos") {
-        bail!(
-            "Native Stata engine currently supports macOS only (found {})",
-            std::env::consts::OS
-        );
-    }
     let edition = edition.to_lowercase();
-    let (app_name, lib_name) = match edition.as_str() {
-        "be" => ("StataBE", "libstata-be.dylib"),
-        "se" => ("StataSE", "libstata-se.dylib"),
-        _ => ("StataMP", "libstata-mp.dylib"),
+    let app_name = match edition.as_str() {
+        "be" => "StataBE",
+        "se" => "StataSE",
+        "mp" => "StataMP",
+        _ => bail!("Unknown Stata edition: {edition}. Expected one of mp, se, be."),
     };
     if !stata_home.is_dir() {
         bail!("Stata home is not a directory: {}", stata_home.display());
     }
+    #[cfg(target_os = "macos")]
     let lib_path = stata_home
         .join(format!("{app_name}.app"))
         .join("Contents")
         .join("MacOS")
-        .join(lib_name);
+        .join(format!("libstata-{edition}.dylib"));
+    #[cfg(target_os = "windows")]
+    let lib_path = {
+        let _ = app_name;
+        stata_home.join(format!("{edition}-64.dll"))
+    };
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    {
+        let _ = app_name;
+        bail!(
+            "Native Stata engine currently supports macOS and Windows only (found {})",
+            std::env::consts::OS
+        );
+    }
     if !lib_path.is_file() {
         bail!(
             "Stata shared library not found at {}. Check --stata-path / STATA_PATH.",
@@ -363,4 +393,50 @@ fn resolve_library_path(stata_home: &Path, edition: &str) -> Result<PathBuf> {
         );
     }
     Ok(lib_path)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{resolve_library_path, StataEngine};
+    use tempfile::tempdir;
+
+    #[test]
+    fn rejects_unknown_edition_before_library_load() {
+        let temp = tempdir().unwrap();
+        let error = resolve_library_path(temp.path(), "invalid")
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("Unknown Stata edition"), "{error}");
+    }
+
+    #[test]
+    fn failed_initialization_releases_process_guard() {
+        let temp = tempdir().unwrap();
+        let first = match StataEngine::new(temp.path(), "mp") {
+            Err(error) => error.to_string(),
+            Ok(_) => panic!("expected initialization to fail"),
+        };
+        assert!(!first.contains("already initialized"), "{first}");
+        let second = match StataEngine::new(temp.path(), "mp") {
+            Err(error) => error.to_string(),
+            Ok(_) => panic!("expected initialization to fail"),
+        };
+        assert!(
+            !second.contains("already initialized"),
+            "failed init must release ENGINE_ACTIVE: {second}"
+        );
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn resolves_windows_edition_dll_names() {
+        use std::fs;
+        let temp = tempdir().unwrap();
+        for edition in ["mp", "se", "be"] {
+            let dll = temp.path().join(format!("{edition}-64.dll"));
+            fs::write(&dll, b"fixture").unwrap();
+            let resolved = resolve_library_path(temp.path(), edition).unwrap();
+            assert_eq!(resolved, dll);
+        }
+    }
 }

@@ -127,7 +127,26 @@ fn run_command_rejects_invalid_stata_path() {
     ]));
     assert!(!output.status.success());
     let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(stderr.contains("--stata-path is not a directory"));
+    // The exact sentence differs per platform (macOS validates in the engine
+    // resolver, Windows in the path resolver); the stable contract is that
+    // the flag itself is reported as invalid.
+    assert!(stderr.contains("--stata-path"), "{stderr}");
+}
+
+#[test]
+fn help_describes_public_commands_and_options() {
+    let output = run_output(base_command().arg("--help"));
+    assert!(output.status.success());
+    let help = String::from_utf8_lossy(&output.stdout);
+    for expected in [
+        "Run inline Stata commands",
+        "Run a .do file",
+        "Diagnose the local Stata engine",
+        "Path to the Stata installation",
+        "Working directory",
+    ] {
+        assert!(help.contains(expected), "missing {expected:?} in --help");
+    }
 }
 
 #[test]
@@ -245,6 +264,122 @@ fn init_command_creates_agent_workspace_scaffold() {
 }
 
 #[test]
+fn init_copies_boilerplate_from_template_dir_env() {
+    let workspace = tempdir().unwrap();
+    let templates = tempdir().unwrap();
+    fs::create_dir_all(templates.path().join("do")).unwrap();
+    fs::write(templates.path().join("AGENTS.md"), "agents template\n").unwrap();
+    fs::write(
+        templates.path().join("do").join("analysis.do"),
+        "display 1\n",
+    )
+    .unwrap();
+
+    let output = run_output(
+        base_command()
+            .env("STATA_CLI_TEMPLATE_DIR", templates.path())
+            .current_dir(workspace.path())
+            .args(["init"]),
+    );
+    let result = parse_success_json(&output);
+    assert_eq!(result["status"], "success");
+    assert_eq!(
+        fs::read_to_string(workspace.path().join("AGENTS.md")).unwrap(),
+        "agents template\n"
+    );
+    assert!(workspace.path().join("do").join("analysis.do").is_file());
+}
+
+#[test]
+fn run_help_regress_renders_local_help_text() {
+    let Some(stata) = stata_home() else {
+        eprintln!("skipping help render test (no Stata)");
+        return;
+    };
+    let output = run_output(base_command().args([
+        "--stata-path",
+        stata.to_str().unwrap(),
+        "run",
+        "--code",
+        "help regress",
+    ]));
+    let result = parse_success_json(&output);
+    assert_eq!(result["status"], "success");
+    let text = result["output"].as_str().unwrap();
+    assert!(text.contains("regress"), "{text}");
+    assert!(!text.contains('{'), "{text}");
+}
+
+#[test]
+fn run_help_without_topic_returns_guidance() {
+    let Some(stata) = stata_home() else {
+        eprintln!("skipping help guidance test (no Stata)");
+        return;
+    };
+    let output = run_output(base_command().args([
+        "--stata-path",
+        stata.to_str().unwrap(),
+        "run",
+        "--code",
+        "help",
+    ]));
+    let result = parse_success_json(&output);
+    assert_eq!(result["status"], "success");
+    assert!(
+        result["output"].as_str().unwrap().contains("needs a topic"),
+        "{}",
+        result["output"]
+    );
+}
+
+#[test]
+fn run_help_unknown_topic_returns_guidance() {
+    let Some(stata) = stata_home() else {
+        eprintln!("skipping help guidance test (no Stata)");
+        return;
+    };
+    let output = run_output(base_command().args([
+        "--stata-path",
+        stata.to_str().unwrap(),
+        "run",
+        "--code",
+        "help no_such_topic_xyz",
+    ]));
+    let result = parse_success_json(&output);
+    assert_eq!(result["status"], "success");
+    assert!(
+        result["output"]
+            .as_str()
+            .unwrap()
+            .contains("No local help file"),
+        "{}",
+        result["output"]
+    );
+}
+
+#[test]
+fn run_search_returns_guidance() {
+    let Some(stata) = stata_home() else {
+        eprintln!("skipping search guidance test (no Stata)");
+        return;
+    };
+    let output = run_output(base_command().args([
+        "--stata-path",
+        stata.to_str().unwrap(),
+        "run",
+        "--code",
+        "search regress",
+    ]));
+    let result = parse_success_json(&output);
+    assert_eq!(result["status"], "success");
+    assert!(
+        result["output"].as_str().unwrap().contains("search window"),
+        "{}",
+        result["output"]
+    );
+}
+
+#[test]
 fn repl_command_runs_native_loop_and_exits() {
     let Some(stata) = stata_home() else {
         eprintln!("skipping repl test (no Stata)");
@@ -261,7 +396,7 @@ fn repl_command_runs_native_loop_and_exits() {
         .stdin
         .as_mut()
         .unwrap()
-        .write_all(b"display 2+2\n:exit\n")
+        .write_all(b"display 2+2\nquit\n")
         .unwrap();
     let output = child.wait_with_output().unwrap();
     assert!(

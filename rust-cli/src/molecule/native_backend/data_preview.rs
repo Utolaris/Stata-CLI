@@ -153,11 +153,11 @@ fn export_csv(engine: &StataEngine, in_clause: Option<&str>) -> Result<PathBuf> 
     let command = match in_clause {
         Some(clause) => format!(
             "quietly export delimited {clause} using {}, replace nolabel",
-            stata_quote_path(&csv_path.display().to_string())
+            stata_quote_path(&csv_path.display().to_string())?
         ),
         None => format!(
             "quietly export delimited using {}, replace nolabel",
-            stata_quote_path(&csv_path.display().to_string())
+            stata_quote_path(&csv_path.display().to_string())?
         ),
     };
     let result = engine.execute(&command);

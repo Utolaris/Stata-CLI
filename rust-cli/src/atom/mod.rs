@@ -13,6 +13,6 @@ pub(crate) mod partial_failure;
 pub(crate) mod path_ops;
 pub(crate) mod progress_feedback;
 pub(crate) mod repl_formatting;
-pub(crate) mod smcl_html;
+pub(crate) mod smcl_text;
 pub(crate) mod stata_engine;
 pub(crate) mod stata_syntax;

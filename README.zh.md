@@ -20,20 +20,27 @@ C:\Program Files\Stata18
 
 如果 Stata 装在别的位置，可以通过 `--stata-path` 指定，或者在 CLI 配置里设置。
 
-### 2. 把仓库内的 `bin/` 加入 `PATH`
+### 2. 安装 skill 包（推荐）
 
-这个项目把可执行文件放在仓库根目录下的 `bin/`。二进制会从自身位置反推仓库根目录，
-所以把它放在仓库内，就不需要额外做全局安装。
-
-克隆仓库后，请把 `bin/` 目录加入 shell 的 `PATH`：
+仓库里有一个自包含的 skill 文件夹 `skill/stata-cli/`：`SKILL.md`、`bin/`
+和 `boilerplate/` 放在同一个文件夹里，二进制与 init 模板一起分发，
+用户不需要克隆完整仓库。
 
 ```bash
-export PATH="/absolute/path/to/stata-cli/bin:$PATH"
+./scripts/install_skill.sh            # 安装到 ~/.codex/skills/stata-cli
+./scripts/install_skill.sh --claude   # 同时安装到 ~/.claude/skills/stata-cli
+```
+
+安装前会把旧 skill 目录备份。`stata-cli init` 会从二进制旁边的 `boilerplate/`
+（或 `STATA_CLI_TEMPLATE_DIR` 环境变量）定位模板，运行时不再依赖仓库。
+
+如果要在仓库内开发，也可以把 `skill/stata-cli/bin/` 加入 shell 的 `PATH`：
+
+```bash
+export PATH="/absolute/path/to/stata-cli/skill/stata-cli/bin:$PATH"
 ```
 
 如果希望永久生效，把这行写进你的 shell 配置文件。
-
-`bin/` 里的二进制会从自身位置反推仓库根目录，所以把它放在仓库内，就不需要额外做全局安装。
 
 如果你所在的平台还没有对应的 `bin/` 二进制，可以先本地构建，再复制进去：
 
@@ -48,7 +55,7 @@ Windows PowerShell：
 ```powershell
 cargo install cargo-zigbuild --locked
 cargo zigbuild --release --target x86_64-pc-windows-gnu --manifest-path rust-cli/Cargo.toml
-Copy-Item rust-cli\\target\\x86_64-pc-windows-gnu\\release\\stata-cli.exe bin\\stata-cli.exe
+Copy-Item rust-cli\\target\\x86_64-pc-windows-gnu\\release\\stata-cli.exe skill\\stata-cli\\bin\\stata-cli.exe
 ```
 
 如果 Windows 上有 Bash，也可以运行：
@@ -56,6 +63,10 @@ Copy-Item rust-cli\\target\\x86_64-pc-windows-gnu\\release\\stata-cli.exe bin\\s
 ```bash
 bash ./scripts/build_windows_bin.sh
 ```
+
+`install_skill.sh` 会把 `skill/stata-cli/` 整个文件夹安装到
+`~/.codex/skills/stata-cli`（`--claude` 可同时安装到 `~/.claude/skills`），
+旧目录会先备份。
 
 ### 3. 验证安装
 
@@ -72,6 +83,7 @@ stata-cli doctor
 - 使用 `stata-cli data view` 和 `stata-cli data export-csv` 查看和导出 `.dta` 数据
 - 使用 `stata-cli doctor` 诊断本地 Stata 引擎
 - 使用 `stata-cli init` 初始化一个适合 AI 协作的项目骨架
+- 在 REPL 和 `run` 里用 `help <主题>` 渲染真实的本地 Stata 帮助文本
 - 使用 `stata-cli init` 放入工作区的 `skills/stata-cli/` 本地 Stata skill
 - 使用 `stata-cli repl` 打开面向人工交互的独立 REPL
 
@@ -85,7 +97,7 @@ cd my-analysis
 stata-cli init
 ```
 
-`stata-cli init` 会把仓库根目录下的 `boilerplate/` 骨架复制到当前目录，为数据、Stata 代码、输出、辅助脚本和代理说明提供统一结构。
+`stata-cli init` 会把随二进制一起分发的 `boilerplate/` 骨架复制到当前目录，为数据、Stata 代码、输出、辅助脚本和代理说明提供统一结构。
 这个骨架里也包含了 `skills/stata-cli/` 的本地参考资料，供 AI 代理使用。
 
 ### 运行 Stata 代码
@@ -112,6 +124,10 @@ stata-cli repl
 ```
 
 REPL 是一个单独面向人工的交互界面，带有 Stata 风格提示符、语法高亮、代码补全、续行处理和过滤后的输出。
+在 REPL 里输入 `help <主题>` 会把真实的本机 Stata 帮助（从 Stata 安装目录的
+`.sthlp` 文件读取并转成纯文本）打印到终端。裸 `help`、`search` 和 `findit`
+会返回指引消息，因为这些命令在 Stata 里打开的是 GUI 窗口，不会输出到终端。
+在 `.do` 文件内部，`help` 保持 Stata 原生行为。
 
 ### 诊断本地环境
 
@@ -203,8 +219,9 @@ stata-cli doctor
 - C 引擎崩溃可能导致整个 CLI 进程退出。
 - `data view` 预览通过临时 `export delimited` CSV（带 `nolabel`）生成，并按
   `describe` 读到的存储类型转换（前导零字符串保持字符串、value label 返回
-  数值码、全缺失列保持真实类型）。浮点数保留 Stata 默认文本精度
-  （8 位有效数字），与 pandas 的完整 float32 展开略有差异；整数列输出为 JSON 整数。
+  数值码、全缺失列保持真实类型）。浮点数使用 Stata 的最短往返文本表示
+  （float32 存储约 8 位有效数字、double 全精度），可以精确还原存储值；
+  与 pandas 对 float32 列的 float64 展开只是文本长度差异；整数列输出为 JSON 整数。
 
 ## 许可证
 

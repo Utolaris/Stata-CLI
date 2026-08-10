@@ -20,21 +20,31 @@ C:\Program Files\Stata18
 
 If Stata is installed somewhere else, pass `--stata-path` or set it in the CLI config.
 
-### 2. Add the repo-local binary directory to `PATH`
+### 2. Install the skill package (recommended)
 
-This project ships a repo-local binary under `bin/`. The binary resolves the repository root from its own location, so keeping it inside the repo means you do not need a separate global install step.
-
-After cloning the repo, add its `bin/` directory to your shell `PATH`:
+The repo ships a self-contained skill folder at `skill/stata-cli/`: `SKILL.md`,
+`bin/`, and `boilerplate/` live in one folder, so the binary and the init
+templates travel together. Users do not need to clone the repository.
 
 ```bash
-export PATH="/absolute/path/to/stata-cli/bin:$PATH"
+./scripts/install_skill.sh            # installs into ~/.codex/skills/stata-cli
+./scripts/install_skill.sh --claude   # also installs into ~/.claude/skills/stata-cli
+```
+
+Existing skill folders are backed up before being replaced. `stata-cli init`
+finds `boilerplate/` next to the binary (or via `STATA_CLI_TEMPLATE_DIR`), so a
+clone is never required at runtime.
+
+If you prefer to develop inside the repo, add `skill/stata-cli/bin/` to your
+shell `PATH` instead:
+
+```bash
+export PATH="/absolute/path/to/stata-cli/skill/stata-cli/bin:$PATH"
 ```
 
 Put that line in your shell config if you want it to persist.
 
-The binary in `bin/` resolves the repository root from its own location, so keeping it inside the repo means you do not need a separate global install step.
-
-If you are on a platform that does not already have a matching binary in `bin/`, build one locally and copy it there:
+If you are on a platform that does not already have a matching binary in `skill/stata-cli/bin/`, build one locally and copy it there:
 
 macOS / Linux:
 
@@ -47,7 +57,7 @@ Windows PowerShell:
 ```powershell
 cargo install cargo-zigbuild --locked
 cargo zigbuild --release --target x86_64-pc-windows-gnu --manifest-path rust-cli/Cargo.toml
-Copy-Item rust-cli\\target\\x86_64-pc-windows-gnu\\release\\stata-cli.exe bin\\stata-cli.exe
+Copy-Item rust-cli\\target\\x86_64-pc-windows-gnu\\release\\stata-cli.exe skill\\stata-cli\\bin\\stata-cli.exe
 ```
 
 If you have Bash available on Windows, you can also run:
@@ -71,6 +81,7 @@ stata-cli doctor
 - Inspect and export `.dta` data with `stata-cli data view` and `stata-cli data export-csv`
 - Diagnose the local Stata engine with `stata-cli doctor`
 - Bootstrap an AI-friendly project scaffold with `stata-cli init`
+- Render real local Stata help text for `help <topic>` in the REPL and `run`
 - Use the bundled Stata skill that `stata-cli init` places under `skills/stata-cli/` in each workspace
 - Use the standalone `stata-cli repl` for human interactive work, including syntax highlighting and code completion
 
@@ -84,7 +95,7 @@ cd my-analysis
 stata-cli init
 ```
 
-`stata-cli init` copies the repo-root `boilerplate/` scaffold into the current directory, giving each analysis project a predictable structure for data, Stata code, outputs, helper scripts, and agent instructions.
+`stata-cli init` copies the `boilerplate/` scaffold that ships next to the binary into the current directory, giving each analysis project a predictable structure for data, Stata code, outputs, helper scripts, and agent instructions.
 The scaffold also includes a local `skills/stata-cli/` reference library for AI agents.
 
 ### Run Stata code
@@ -111,6 +122,7 @@ stata-cli repl
 ```
 
 The REPL is a separate human-oriented interface with a Stata-style prompt, syntax highlighting, code completion, continuation handling, and filtered output.
+`help <topic>` renders the real local Stata help text (read from Stata's installed `.sthlp` files) into the terminal. Bare `help`, `search`, and `findit` return a guidance message instead, because those commands open Stata's GUI windows and produce no terminal output. Inside `.do` files, `help` keeps Stata's native behavior.
 
 ### Diagnose the local environment
 
@@ -210,9 +222,11 @@ Known constraints and risks:
 - `data view` previews are produced via a temporary `export delimited` CSV
   with `nolabel`, converted by the storage types read from `describe` (so
   leading-zero strings stay strings, value labels come back as numeric codes,
-  and all-missing columns keep their real dtype). Floating-point values carry
-  Stata's default text precision (8 significant digits) instead of pandas'
-  full float32 expansion, and integer columns are reported as JSON integers.
+  and all-missing columns keep their real dtype). Floating-point values use
+  Stata's shortest round-trip text form (about 8 significant digits for float32
+  storage, full precision for double), which reconstructs the exact stored
+  value; this differs only textually from pandas' float64 widening of float32
+  columns, and integer columns are reported as JSON integers.
 
 ## License
 

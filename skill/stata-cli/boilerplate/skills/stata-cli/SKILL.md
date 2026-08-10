@@ -74,7 +74,6 @@ Read only the files relevant to the task. Paths are relative to this `SKILL.md`.
 
 - `references/graphics.md`
 - `references/tables-reporting.md`
-- `references/external-tools-integration.md`
 
 ### Mata
 
@@ -88,21 +87,16 @@ Read only the files relevant to the task. Paths are relative to this `SKILL.md`.
 - `packages/package-management.md`
 - `packages/reghdfe.md`
 - `packages/estout.md`
-- `packages/outreg2.md`
 - `packages/coefplot.md`
 - `packages/winsor.md`
-- `packages/did.md`
 - `packages/event-study.md`
 - `packages/rdrobust.md`
-- `packages/psmatch2.md`
 - `packages/synth.md`
 - `packages/ivreg2.md`
 - `packages/xtabond2.md`
 - `packages/binsreg.md`
 - `packages/nprobust.md`
-- `packages/tabout.md`
 - `packages/asdoc.md`
-- `packages/diagnostics.md`
 - `packages/data-manipulation.md`
 - `packages/graph-schemes.md`
 
