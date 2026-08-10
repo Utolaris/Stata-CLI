@@ -16,14 +16,11 @@ Stata 代码、`.do` 文件和 `.dta` 数据。**不再需要 Python、pystata �
 macOS 上会自动检测 `/Applications/StataNow` 和 `/Applications/Stata`。
 Stata 17 及更低版本未经测试，不保证能正常运行。
 
-Windows 下建议使用默认路径：
-
-```text
-C:\Program Files\Stata19
-```
-
-（Stata 18 的 Windows 默认路径是 `C:\Program Files\Stata18`。）如果 Stata
-装在别的位置，可以通过 `--stata-path` 指定，或者在 CLI 配置里设置。
+Windows 下 CLI 会自动探测 `C:\Program Files` 下最新的安装，优先 `StataNow`
+（订阅版）目录，其次经典 `Stata` 目录，版本从高到低——例如先
+`C:\Program Files\StataNow19`，再 `C:\Program Files\Stata19`，然后是更旧的
+`StataNow18`/`Stata18`。如果 Stata 装在别的位置，可以通过 `--stata-path`
+指定，或者在 CLI 配置里设置。
 
 ### 2. 安装 skill 包（推荐）
 

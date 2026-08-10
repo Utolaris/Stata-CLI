@@ -17,13 +17,10 @@ example Stata 19.5). On macOS, both `/Applications/StataNow` and
 `/Applications/Stata` are detected automatically. Stata 17 and older versions
 are untested and not guaranteed to work.
 
-On Windows, the default location is best:
-
-```text
-C:\Program Files\Stata19
-```
-
-(For Stata 18, the Windows default is `C:\Program Files\Stata18`.) If Stata is
+On Windows, the CLI auto-detects the newest install under `C:\Program Files`,
+preferring `StataNow` (subscription) directories over classic `Stata`
+directories, highest version first — for example `C:\Program Files\StataNow19`,
+then `C:\Program Files\Stata19`, then older `StataNow18`/`Stata18`. If Stata is
 installed somewhere else, pass `--stata-path` or set it in the CLI config.
 
 ### 2. Install the skill package (recommended)

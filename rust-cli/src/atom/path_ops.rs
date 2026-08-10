@@ -135,7 +135,35 @@ pub(crate) fn absolutize_cli_path(path: &Path) -> Result<PathBuf> {
 }
 
 pub(crate) fn windows_default_stata_path() -> PathBuf {
-    PathBuf::from(r"C:\Program Files\Stata19")
+    let program_files = std::env::var_os("ProgramFiles")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from(r"C:\Program Files"));
+    first_stata_candidate(&program_files)
+        .unwrap_or_else(|| PathBuf::from(r"C:\Program Files\Stata19"))
+}
+
+/// Pick the installed Stata home from `program_files`, probing
+/// `StataNow<version>` (subscription) before `Stata<version>` (classic) and
+/// preferring the highest version: e.g. `StataNow19`, `Stata19`,
+/// `StataNow18`, `Stata18`, ...
+fn first_stata_candidate(program_files: &Path) -> Option<PathBuf> {
+    let mut candidates: Vec<(u32, bool, PathBuf)> = Vec::new();
+    if let Ok(entries) = std::fs::read_dir(program_files) {
+        for entry in entries.flatten() {
+            let name = entry.file_name().to_string_lossy().into_owned();
+            if let Some(version) = name.strip_prefix("StataNow") {
+                if let Ok(version) = version.parse::<u32>() {
+                    candidates.push((version, true, program_files.join(&name)));
+                }
+            } else if let Some(version) = name.strip_prefix("Stata") {
+                if let Ok(version) = version.parse::<u32>() {
+                    candidates.push((version, false, program_files.join(&name)));
+                }
+            }
+        }
+    }
+    candidates.sort_by(|a, b| b.0.cmp(&a.0).then(b.1.cmp(&a.1)));
+    candidates.into_iter().map(|(_, _, path)| path).next()
 }
 
 pub(crate) fn repl_history_path() -> Option<PathBuf> {
@@ -326,6 +354,34 @@ mod tests {
                 exe_dir.join("boilerplate")
             ]
         );
+    }
+
+    #[test]
+    fn first_stata_candidate_prefers_now_then_highest_version() {
+        let temp = tempdir().unwrap();
+        let pf = temp.path();
+        std::fs::create_dir_all(pf.join("Stata18")).unwrap();
+        std::fs::create_dir_all(pf.join("StataNow18")).unwrap();
+        std::fs::create_dir_all(pf.join("Stata19")).unwrap();
+        std::fs::create_dir_all(pf.join("StataNow19")).unwrap();
+        assert_eq!(first_stata_candidate(pf), Some(pf.join("StataNow19")));
+    }
+
+    #[test]
+    fn first_stata_candidate_falls_back_to_classic_latest() {
+        let temp = tempdir().unwrap();
+        let pf = temp.path();
+        std::fs::create_dir_all(pf.join("Stata19")).unwrap();
+        std::fs::create_dir_all(pf.join("Stata18")).unwrap();
+        assert_eq!(first_stata_candidate(pf), Some(pf.join("Stata19")));
+    }
+
+    #[test]
+    fn first_stata_candidate_ignores_unrelated_dirs() {
+        let temp = tempdir().unwrap();
+        std::fs::create_dir_all(temp.path().join("StataCorp")).unwrap();
+        std::fs::create_dir_all(temp.path().join("StataX")).unwrap();
+        assert_eq!(first_stata_candidate(temp.path()), None);
     }
 
     #[test]
