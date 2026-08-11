@@ -1,45 +1,60 @@
-# stata-cli
+<!-- markdownlint-disable MD013 MD033 MD041 -->
 
-中文说明请见 [README.zh.md](./README.zh.md).
+<h1 align="center">stata-cli</h1>
 
-**Run Stata locally from AI coding agents such as OpenAI Codex, Claude Code, Cursor, and OpenCode.**
+<p align="center">
+  让Codex、Claude Code、Cursor、OpenCode 等 AI agent在本机直接控制 Stata，进行计量经济学分析的一体化工具包。
+</p>
 
-`stata-cli` is a native Rust CLI and Agent Skill for Stata 18, Stata 19, and
-StataNow. It lets AI agents execute Stata commands and `.do` files, inspect
-`.dta` datasets, retrieve Stata help, and receive structured JSON results — no
-Python, PyStata, Jupyter, or the Stata GUI required. The engine loads Stata's
-own shared library (`libstata-mp.dylib` / `mp-64.dll`) and calls the official
-`StataSO_*` C ABI directly, so behavior matches the installed Stata exactly.
+<p align="center">
+  <a href="SECURITY.md">安全策略</a> ·
+  <a href="#许可证">许可证</a>
+</p>
 
-Use it for AI-assisted econometrics, statistical analysis, reproducible
-research, and autonomous Stata workflows. Non-REPL commands return structured
-JSON; a standalone REPL with syntax highlighting and code completion is
-included for human exploration. An AI agent can also bootstrap a complete
-analysis workspace with `stata-cli init`, without needing VS Code.
+<p align="center">
+  <a href="https://github.com/Utolaris/Stata-CLI/actions/workflows/compatibility.yml"><img alt="Blocking CI tests" src="https://github.com/Utolaris/Stata-CLI/actions/workflows/compatibility.yml/badge.svg"></a>
+  <img alt="Source version v1.0.1" src="https://img.shields.io/badge/version-v1.0.1-0099CC">
+  <img alt="Native Rust engine" src="https://img.shields.io/badge/Rust-native--engine-B7410E?logo=rust&logoColor=white">
+  <img alt="License MIT" src="https://img.shields.io/badge/license-MIT-6DB33F">
+</p>
 
-## Install
+## 这是什么
 
-### 1. Install Stata 18 or 19
+`stata-cli` 是一个原生 Rust 写的 Stata CLI 和 Agent Skill，支持 Stata 18、
+Stata 19 和 StataNow。AI 代理可以用它执行 Stata 命令和 `.do` 文件、查看
+`.dta` 数据集、查询本地 Stata 帮助，拿到结构化 JSON 结果。
 
-`stata-cli` supports Stata 18 and Stata 19, including StataNow releases (for
-example Stata 19.5). On macOS, both `/Applications/StataNow` and
-`/Applications/Stata` are detected automatically. Stata 17 and older versions
-are untested and not guaranteed to work.
+它直接加载 Stata 自带的共享库（`libstata-mp.dylib` / `mp-64.dll`），在进程内
+调用官方 `StataSO_*` C ABI，行为和你装的 Stata 完全一致。不需要 Python、
+PyStata、Jupyter 或 Stata GUI。
 
-On Windows, the CLI auto-detects the newest install under `C:\Program Files`,
-preferring `StataNow` (subscription) directories over classic `Stata`
-directories, highest version first — for example `C:\Program Files\StataNow19`,
-then `C:\Program Files\Stata19`, then older `StataNow18`/`Stata18`. If Stata is
-installed somewhere else, pass `--stata-path` or set it in the CLI config.
+非 REPL 命令返回结构化 JSON。另外带一个独立 REPL，有语法高亮和代码补全，
+适合人手动用。`stata-cli init` 可以一步建好整个分析工作区。
 
-### 2. Install the skill package (recommended)
+> [!WARNING]
+> 这会真的在你机器上跑 Stata 代码。执行用户提供的代码是这工具的本职，代码以
+> 调用用户的权限运行，进程内引擎不是沙箱。交互式或阻塞命令（`browse`、
+> `edit`、`db`、`dialog`、`window`、`shell`、`winexec`、`pause`）会被拦下或
+> 要求显式确认，但跑 `.do` 文件前最好还是先看一眼内容。
 
-The repo ships a self-contained skill folder at `skill/stata-cli/`: `SKILL.md`,
-`bin/`, and `boilerplate/` live in one folder, so the binary and the init
-templates travel together. Users do not need to clone the repository.
+## 快速开始
 
-The fastest way to install is the official skills CLI, which pulls the skill
-straight from this GitHub repo and installs it for the agents you choose:
+### 1. 安装 Stata 18 或 19
+
+支持 Stata 18 和 Stata 19（含 StataNow，比如 19.5）。Stata 17 及更早的版本
+没测过，不保证能用。
+
+- macOS：自动检测 `/Applications/StataNow` 和 `/Applications/Stata`。
+- Windows：自动探测 `C:\Program Files` 下最新的安装，优先 `StataNow`
+  （订阅版），再考虑经典 `Stata` 目录，版本从高到低（比如 `StataNow19`、
+  `Stata19`）。
+- 装在别处：用 `--stata-path` 指定，或设 `STATA_PATH`（也可以在 CLI
+  配置里写）。
+
+### 2. 安装 skill 包（推荐）
+
+仓库里放了一个自包含的 skill 文件夹 `skill/stata-cli/`：`SKILL.md`、`bin/`、
+`boilerplate/` 一起分发，不用克隆仓库。最快的装法是用官方 skills CLI：
 
 ```bash
 npx skills add utolaris/stata-cli \
@@ -50,74 +65,30 @@ npx skills add utolaris/stata-cli \
   --copy
 ```
 
-`--global` installs into your user-level skill folders; `--copy` copies the
-files instead of creating symlinks (important because the skill bundles a
-binary and templates). Add or drop `--agent` lines as needed (`claude-code`,
-`cursor`, `opencode`, ...). You can also grab the `stata-cli.skill` archive
-from the GitHub Releases page and unzip it into any agent's skill folder.
+`--copy` 是复制文件而不是建符号链接（skill 包里带二进制和模板，需要实体
+文件）。按需增删 `--agent` 行，`cursor`、`opencode` 等都可以。也可以从
+GitHub Releases 页面下载 `stata-cli.skill` 压缩包，解压后放进任意 agent 的
+skill 文件夹。
 
-`stata-cli init` finds `boilerplate/` next to the binary (or via
-`STATA_CLI_TEMPLATE_DIR`), so a clone is never required at runtime.
-
-If you prefer to develop inside the repo, add `skill/stata-cli/bin/` to your
-shell `PATH` instead:
+在仓库里开发的话，把本地二进制加进 `PATH` 就行：
 
 ```bash
 export PATH="/absolute/path/to/stata-cli/skill/stata-cli/bin:$PATH"
 ```
 
-Put that line in your shell config if you want it to persist.
+平台上没有对应的 `bin/` 二进制？本地构建一个复制进 `skill/stata-cli/bin/`
+（macOS：`./scripts/update_repo_bin.sh`；Windows PowerShell：
+`cargo install cargo-zigbuild --locked`，然后
+`cargo zigbuild --release --target x86_64-pc-windows-gnu --manifest-path rust-cli/Cargo.toml`
+并复制生成的 `.exe`；有 Bash 就跑 `bash ./scripts/build_windows_bin.sh`）。
 
-If you are on a platform that does not already have a matching binary in `skill/stata-cli/bin/`, build one locally and copy it there:
-
-macOS:
-
-```bash
-./scripts/update_repo_bin.sh
-```
-
-Windows PowerShell:
-
-```powershell
-cargo install cargo-zigbuild --locked
-cargo zigbuild --release --target x86_64-pc-windows-gnu --manifest-path rust-cli/Cargo.toml
-Copy-Item rust-cli\\target\\x86_64-pc-windows-gnu\\release\\stata-cli.exe skill\\stata-cli\\bin\\stata-cli.exe
-```
-
-If you have Bash available on Windows, you can also run:
-
-```bash
-bash ./scripts/build_windows_bin.sh
-```
-
-### 3. Verify the setup
+### 3. 验证
 
 ```bash
 stata-cli doctor
 ```
 
-## Releases
-
-- **v1.0.1** — Stata 18/19 support (including StataNow); skill updates with
-  Stata 19 feature references; Stata 19 feature e2e tests; ad-hoc code signing
-  for macOS builds.
-
-## Capabilities
-
-`stata-cli` is designed to make local Stata work easier for AI agents and humans:
-
-- Run inline Stata commands with `stata-cli run`
-- Execute `.do` files with `stata-cli file`
-- Inspect and export `.dta` data with `stata-cli data view` and `stata-cli data export-csv`
-- Diagnose the local Stata engine with `stata-cli doctor`
-- Bootstrap an AI-friendly project scaffold with `stata-cli init`
-- Render real local Stata help text for `help <topic>` in the REPL and `run`
-- Use the installed `stata-cli` skill's reference library for Stata syntax and package guidance
-- Use the standalone `stata-cli repl` for human interactive work, including syntax highlighting and code completion
-
-Non-REPL commands are intentionally AI-friendly: they return structured JSON and avoid dumping unnecessary terminal noise into stdout.
-
-### Initialize an AI-ready workspace
+### 4. 初始化工作区
 
 ```bash
 mkdir my-analysis
@@ -125,147 +96,113 @@ cd my-analysis
 stata-cli init
 ```
 
-`stata-cli init` copies the `boilerplate/` scaffold that ships next to the binary into the current directory, giving each analysis project a predictable structure for data, Stata code, outputs, helper scripts, and agent instructions.
-The scaffold stays minimal; the Stata reference library lives in the installed
-`stata-cli` skill package (`references/` and `packages/`) instead of being
-copied into every workspace.
+## skill 包里有什么
 
-### Run Stata code
+| 路径 | 说明 |
+| --- | --- |
+| `SKILL.md` | 面向代理的说明和参考资料路由表 |
+| `bin/` | 仓库本地原生二进制（macOS arm64、Windows x86-64） |
+| `references/`、`packages/` | Stata 语法与包参考资料（只读当前任务需要的 1–3 个文件） |
+| `boilerplate/` | `stata-cli init` 复制的骨架源 |
+| `init` 之后：`data/`、`do/`、`outputs/`、`scripts/`、`AGENTS.md` | 数据、Stata 代码、输出、辅助脚本、代理说明的统一目录结构 |
+
+## 功能
+
+| 命令 | 作用 |
+| --- | --- |
+| `stata-cli run --code '...'` | 执行内联 Stata 代码，返回结构化 JSON |
+| `stata-cli file /path/to/script.do` | 运行 `.do` 文件；完整输出写到旁边的日志，JSON 里带部分失败明细 |
+| `stata-cli data view` | 以 JSON 预览 `.dta` 文件（`--max-rows`、`--if-condition`） |
+| `stata-cli data export-csv` | 把 `.dta` 导出为 CSV（`--replace` 覆盖） |
+| `stata-cli doctor` | 诊断本地 Stata 引擎 |
+| `stata-cli init` | 初始化 AI 友好的工作区 |
+| `stata-cli repl` | 人工 REPL：Stata 风格提示符、语法高亮、代码补全、续行处理 |
+| `help <主题>` | 在 REPL 和 `run` 里渲染本地 Stata 帮助文本（`.sthlp`） |
 
 ```bash
 stata-cli run --code 'display 1+1'
-```
-
-Use this for short inline commands. The response is structured JSON, so AI agents can reliably inspect status, output, logs, and errors.
-
-### Run a `.do` file
-
-```bash
 stata-cli file /absolute/path/to/script.do
-```
-
-Use this for substantial Stata analysis. It is the preferred path for agent-driven work because code, logs, and generated files stay inside the project workspace.
-The JSON response keeps `output` to the final tail of the Stata log for quick error location; read `log_file` when the full result is needed.
-
-### Start the REPL
-
-```bash
-stata-cli repl
-```
-
-The REPL is a separate human-oriented interface with a Stata-style prompt, syntax highlighting, code completion, continuation handling, and filtered output.
-`help <topic>` renders the real local Stata help text (read from Stata's installed `.sthlp` files) into the terminal. Bare `help`, `search`, and `findit` return a guidance message instead, because those commands open Stata's GUI windows and produce no terminal output. Inside `.do` files, `help` keeps Stata's native behavior.
-
-### Diagnose the local environment
-
-```bash
-stata-cli doctor
-```
-
-Use `doctor` to confirm that the repo-local Rust CLI can load Stata's shared library and execute a probe command.
-
-### Work with data
-
-```bash
 stata-cli data view --input-dta /absolute/path/to/data.dta --max-rows 20
 stata-cli data view --input-dta /absolute/path/to/data.dta --if-condition 'iq > 110' --max-rows 10
-```
-
-Use `data view` for small previews and schema checks from an explicit `.dta` file. Non-REPL CLI commands do not share session state, so AI agents should not rely on `data view` seeing data loaded by a previous command.
-
-## AI-first workflow
-
-For agent-driven work, start with:
-
-```bash
-mkdir my-analysis
-cd my-analysis
-stata-cli init
-```
-
-Then keep the working pattern simple:
-
-- Put substantial Stata logic in `do/analysis.do`
-- Include `capture log close` and `set more off`
-- Write full text output to `outputs/result.txt`
-- Run the analysis with `stata-cli file do/analysis.do`
-- Use the JSON response to inspect `status`, `error`, `partial_failure_count`, `partial_failures`, `log_file`, and `graphs`
-- Use `data view` for schema checks and small previews, not full table dumps
-- Use Python scripts under `scripts/` for final charts saved into `outputs/`
-- If the user explicitly wants Stata graphs, write explicit `graph export "outputs/..."` commands in the `.do` file instead of relying on CLI graph capture
-- Run `which <command>` before using third-party Stata packages, and ask before installing anything
-- Read the installed `stata-cli` skill's `references/` and `packages/` when you need Stata syntax, package guidance, or idiomatic patterns
-
-### Export data to CSV
-
-```bash
 stata-cli data export-csv --input-dta /absolute/path/to/data.dta --output /absolute/path/to/out.csv --replace
 ```
 
-- Convert a `.dta` file to CSV
-- Overwrite an existing CSV with `--replace`
+## AI 优先工作流
 
-## Common failure reasons
+代理驱动分析时，简洁至上，避免浪费TOKEN：
 
-- `stata-cli` is not installed or not on `PATH`
-- Stata 19.5 is not installed, or `--stata-path` points to the wrong location
-- Stata was not found at `--stata-path`, `STATA_PATH`, or the macOS defaults (`/Applications/StataNow`, `/Applications/Stata`)
-- The target `.do` or `.dta` file path does not exist
+- 主要的 Stata 逻辑放 `do/analysis.do`（保留 `capture log close` 和
+  `set more off`）
+- 完整文本输出写到 `outputs/result.txt`
+- 用 `stata-cli file do/analysis.do` 跑分析
+- 从 JSON 里看 `status`、`error`、`partial_failure_count`、
+  `partial_failures`、`log_file`、`graphs`
+- `data view` 只用来做结构检查和小预览，别整表 dump
+- 最终图表用 `scripts/` 下的 Python 脚本保存到 `outputs/`
+- 用户明确要 Stata 图时，在 `.do` 里写 `graph export "outputs/..."`，
+  别指望 CLI 自动抓图
+- 用第三方 Stata 包之前先 `which <command>`，装之前先问
+- 需要语法、包说明或常见模式时，翻已安装 skill 的 `references/` 和
+  `packages/`
 
-If setup looks wrong, start with:
+## 常见问题
+
+| 现象 | 应该做的事 |
+| --- | --- |
+| 找不到 `stata-cli` | 装 skill，或把 `skill/stata-cli/bin/` 加进 `PATH` |
+| 找不到 Stata | 检查 `--stata-path`、`STATA_PATH` 和 macOS 默认路径（`/Applications/StataNow`、`/Applications/Stata`） |
+| `.do` / `.dta` 路径不存在 | 用绝对路径，确认文件存在 |
+| 交互命令警告 | 包含 `browse`/`edit`/`shell`/`winexec`/`pause` 的 `.do` 文件需要显式确认，这是设计行为 |
+
+可以上来就先跑：
 
 ```bash
 stata-cli doctor
 ```
 
-## Unsafe FFI
+## 兼容性与限制
 
-The Rust crate normally forbids `unsafe` code (`unsafe_code = "warn"` since the
-project no longer uses Python). There is one deliberate exception:
-`rust-cli/src/atom/stata_engine.rs` calls into Stata's shared library through
-its exported `StataSO_*` C ABI. Stata does not ship a Rust API, and the local
-in-process bridge is the only supported way to drive Stata without a separate
-process (the official `pystata` package does the same thing through `ctypes`).
+- 支持 Stata 18 / 19 / StataNow（例如 19.5），平台是 macOS（arm64）和
+  Windows（x86-64）；Stata 17 及更早没测过。
+- 每个 OS 进程只能有一个 Stata 引擎（Stata 用进程级全局状态）。并行会话
+  需要独立进程；C 引擎崩了，整个 CLI 进程也会退出。
+- 非 REPL 命令之间不共享会话状态。
+- 输出捕获有界：累计 64 MiB，更大的输出截断并加标记，完整结果另存日志。
+- Windows 二进制由 CI 交叉编译（zigbuild）并冒烟测试，但 CI 跑不了许可版
+  Stata；依赖 Stata 的测试在本机跑（CI 用 `SKIP_STATA_TESTS=1` 跳过）。
+- 内嵌引擎不是沙箱。用户提供的 Stata 代码按设计以调用用户的权限运行。
 
-The exception is confined to that one module, which exposes a small safe API:
+## Unsafe FFI（内部设计）
 
-- `StataEngine::new(stata_home, edition)` – loads
-  `libstata-{mp,se,be}.dylib` and initializes the engine (no `-pyexec`, so no
-  Python is attached). A process-wide singleton guard rejects a second engine
-  in the same process.
-- `execute(cmd)` / `run_block(code)` – run one line or a temp-do-file block
-  and return `(rc, output)`. Output is drained from Stata's buffer (raised to
-  512 MB) until empty, so it survives 2 MB+ runs and user `log`/`capture`
-  commands.
-- `set_break()` – interrupt a running command from a monitor thread (reserved
-  for a future stop/timeout feature). An atomic guard allows at most one
-  break per execution; cancellation status comes from that flag, not from
-  matching `--Break--` text.
-- `shutdown()` – note: this calls Stata's `_sexit` and terminates the current
-  process, so it is only used at REPL exit. It is serialized against in-flight
-  executions.
+这个 crate 平时禁止 `unsafe`，只有一个例外：`rust-cli/src/atom/stata_engine.rs`
+通过 Stata 导出的 `StataSO_*` C ABI 在进程内驱动 Stata。官方 `pystata` 用
+`ctypes` 干同样的事。该模块对外只暴露安全 API：
 
-Known constraints and risks:
+- `StataEngine::new(stata_home, edition)`：加载 `libstata-{mp,se,be}.dylib`，
+  不附加 Python 初始化引擎（不传 `-pyexec`）。进程级单例守卫拒绝第二个引擎。
+- `execute(cmd)` / `run_block(code)`：跑单行命令或临时 do-file 块，返回
+  `(rc, output)`。输出从 Stata 缓冲区（已扩大到 512 MB）循环排空，累计上限
+  64 MiB。
+- `set_break()`：预留给未来的 stop/timeout 监控线程。原子守卫保证每次执行
+  最多一次 break。
+- `shutdown()`：会调用 Stata 的 `_sexit` 并终止进程，只在 REPL 退出时用，
+  和执行中的调用互斥。
 
-- One Stata engine per OS process (Stata uses process-wide globals), so
-  parallel sessions must be separate processes.
-- `StataSO_Execute` is not reentrant; calls are serialized with a mutex.
-- A crash inside the C engine can take the whole CLI process down.
-- `data view` previews are produced via a temporary `export delimited` CSV
-  with `nolabel`, converted by the storage types read from `describe` (so
-  leading-zero strings stay strings, value labels come back as numeric codes,
-  and all-missing columns keep their real dtype). Floating-point values use
-  Stata's shortest round-trip text form (about 8 significant digits for float32
-  storage, full precision for double), which reconstructs the exact stored
-  value; this differs only textually from pandas' float64 widening of float32
-  columns, and integer columns are reported as JSON integers.
+`data view` 的预览走临时 `export delimited` CSV（`nolabel`），再按 `describe`
+读到的存储类型转换：前导零字符串保持字符串，value label 返回数值码，全缺失列
+保持真实类型，浮点数用 Stata 最短往返文本表示。
 
-## License
+## 版本发布
 
-## License
+- **v1.0.1**：支持 Stata 18/19（含 StataNow）；Skill 更新，新增 Stata 19
+  功能参考；新增 Stata 19 功能 e2e 测试；macOS 构建自动 ad-hoc 签名。
+
+## 参与贡献与安全报告
+
+漏洞走 GitHub 私密漏洞报告渠道
+（[Utolaris/Stata-CLI](https://github.com/Utolaris/Stata-CLI/security/advisories/new)），
+流程见 [SECURITY.md](SECURITY.md)。别在公开 Issue 里贴凭证、配置或私人路径。
+
+## 许可证
 
 MIT
-
-## Acknowledgements
-
-This project benefits from prior experimentation in AI-oriented Stata tooling and from reverse-engineering the `StataSO_*` ABI used by the PyStata ecosystem.
