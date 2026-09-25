@@ -202,7 +202,7 @@ jobs:
         if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
         run: |
           cd skill
-          zip -r -X ../stata-cli.skill stata-cli
+          zip -r -X ../stata-cli.skill stata-cli -x '*.DS_Store'
           cd ..
 
       - name: Refresh release asset on latest prerelease
