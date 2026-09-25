@@ -43,7 +43,7 @@ if ! "$rustup_bin" target list --installed | grep -qx "$target_triple"; then
 fi
 
 echo "[build_windows_bin] Building Rust CLI for Windows target $target_triple..."
-"$cargo_bin" zigbuild --release --target "$target_triple" --manifest-path "$manifest_path"
+"$cargo_bin" zigbuild --locked --release --target "$target_triple" --manifest-path "$manifest_path"
 
 if [[ ! -f "$target_binary" ]]; then
   echo "[build_windows_bin] Expected binary not found: $target_binary" >&2

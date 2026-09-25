@@ -6,16 +6,42 @@ description = "A local Stata CLI for AI agents (native Rust engine, no Python)"
 
 [dependencies]
 anyhow = "1"
-clap = { version = "4.5", features = ["derive"] }
+# Keep help/usage/error-context; drop color/suggestions (unused weight).
+clap = { version = "4.5", default-features = false, features = [
+    "std",
+    "derive",
+    "help",
+    "usage",
+    "error-context",
+] }
 libloading = "0.8"
-regex = "1"
-rustyline = "14"
+# Keep `\s`/`\d`/`\w`/`(?i)` working; drop unused `\p{...}` unicode tables.
+regex = { version = "1", default-features = false, features = [
+    "std",
+    "perf",
+    "unicode-perl",
+    "unicode-case",
+] }
+# custom-bindings unused; file history is required by the REPL.
+rustyline = { version = "14", default-features = false, features = [
+    "with-file-history",
+] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 toml = "0.8"
 
 [dev-dependencies]
 tempfile = "3"
+
+# Size-oriented release profile for the skill-package binaries in
+# `skill/stata-cli/bin/`. Trade-off is longer link time; runtime cost is
+# acceptable for a local CLI that mostly drives Stata via FFI.
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
 
 [lints.rust]
 # Unsafe is deliberately allowed for the single FFI boundary module

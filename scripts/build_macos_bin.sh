@@ -22,7 +22,7 @@ if [[ -d "$HOME/.cargo/bin" ]]; then
 fi
 
 echo "[build_macos_bin] Building Rust CLI for macOS..."
-"$cargo_bin" build --release --manifest-path "$manifest_path"
+"$cargo_bin" build --locked --release --manifest-path "$manifest_path"
 
 if [[ ! -f "$target_binary" ]]; then
   echo "[build_macos_bin] Expected binary not found: $target_binary" >&2

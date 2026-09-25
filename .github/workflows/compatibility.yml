@@ -92,7 +92,9 @@ jobs:
       - name: Smoke-test native Windows binary
         if: runner.os == 'Windows'
         shell: pwsh
-        run: '& ".\rust-cli\target\release\stata-cli.exe" --help'
+        run: |
+          & ".\rust-cli\target\release\stata-cli.exe" --help
+          Get-Item ".\rust-cli\target\release\stata-cli.exe" | Select-Object Name, Length
 
       - name: Build repo macOS binary (macOS zsh)
         if: runner.os == 'macOS'
@@ -122,6 +124,11 @@ jobs:
         if: runner.os == 'macOS'
         shell: zsh {0}
         run: bash ./scripts/build_windows_bin.sh
+
+      - name: Report skill binary sizes (macOS zsh)
+        if: runner.os == 'macOS'
+        shell: zsh {0}
+        run: ls -la skill/stata-cli/bin/stata-cli skill/stata-cli/bin/stata-cli.exe
 
       - name: Upload zig-built Windows binary
         if: runner.os == 'macOS'
