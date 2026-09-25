@@ -29,13 +29,8 @@ Stata 19 和 StataNow。AI 代理可以用它执行 Stata 命令和 `.do` 文件
 PyStata、Jupyter 或 Stata GUI。
 
 非 REPL 命令返回结构化 JSON。另外带一个独立 REPL，有语法高亮和代码补全，
-适合人手动用。`stata-cli init` 可以一步建好整个分析工作区。
+面向人类设计。
 
-> [!WARNING]
-> 这会真的在你机器上跑 Stata 代码。执行用户提供的代码是这工具的本职，代码以
-> 调用用户的权限运行，进程内引擎不是沙箱。交互式或阻塞命令（`browse`、
-> `edit`、`db`、`dialog`、`window`、`shell`、`winexec`、`pause`）会被拦下或
-> 要求显式确认，但跑 `.do` 文件前最好还是先看一眼内容。
 
 ## 快速开始
 
